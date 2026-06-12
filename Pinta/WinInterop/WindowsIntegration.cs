@@ -52,23 +52,54 @@ internal static partial class WindowsIntegration
 	[LibraryImport ("libgtk-4-1.dll", EntryPoint = "gdk_win32_surface_get_handle")]
 	private static partial IntPtr GdkWin32SurfaceGetHandle (IntPtr surface);
 
+	[LibraryImport ("user32.dll")]
+	[return: MarshalAs (UnmanagedType.Bool)]
+	private static partial bool ShowWindow (IntPtr hWnd, int nCmdShow);
+
+	private const int SW_MAXIMIZE = 3;
+
+	// Returns the native top-level HWND for a realized window, or Zero.
+	private static IntPtr GetRootHwnd (Gtk.ApplicationWindow window)
+	{
+		IntPtr surface = GtkNativeGetSurface (window.Handle.DangerousGetHandle ());
+		if (surface == IntPtr.Zero) return IntPtr.Zero;
+
+		IntPtr hwnd = GdkWin32SurfaceGetHandle (surface);
+		if (hwnd == IntPtr.Zero) return IntPtr.Zero;
+
+		IntPtr root = GetAncestor (hwnd, GA_ROOT);
+		return root != IntPtr.Zero ? root : hwnd;
+	}
+
 	/// <summary>
 	/// Applies a dark native title bar to the window once it is realized.
 	/// </summary>
 	public static void ApplyDarkTitleBar (Gtk.ApplicationWindow window)
 	{
 		window.OnRealize += (_, _) => {
-			IntPtr surface = GtkNativeGetSurface (window.Handle.DangerousGetHandle ());
-			if (surface == IntPtr.Zero) return;
-
-			IntPtr hwnd = GdkWin32SurfaceGetHandle (surface);
+			IntPtr hwnd = GetRootHwnd (window);
 			if (hwnd == IntPtr.Zero) return;
-
-			IntPtr root = GetAncestor (hwnd, GA_ROOT);
-			if (root != IntPtr.Zero) hwnd = root;
-
 			int dark = 1;
 			DwmSetWindowAttribute (hwnd, DWMWA_USE_IMMERSIVE_DARK_MODE, ref dark, sizeof (int));
+		};
+	}
+
+	/// <summary>
+	/// Maximizes the window natively (Win32) once realized, instead of via GTK.
+	/// GTK's own Gtk.Window.Maximize() on Windows pins the window's minimum size
+	/// to the monitor size under system-DPI awareness, leaving it unable to be
+	/// resized, snapped, or un-maximized. The Win32 SW_MAXIMIZE path does not.
+	/// </summary>
+	public static void MaximizeNative (Gtk.ApplicationWindow window)
+	{
+		window.OnRealize += (_, _) => {
+			// Defer to an idle callback so the window is mapped/shown first;
+			// SW_MAXIMIZE during realize is overridden by the subsequent show.
+			GLib.Functions.IdleAdd (0, () => {
+				IntPtr hwnd = GetRootHwnd (window);
+				if (hwnd != IntPtr.Zero) ShowWindow (hwnd, SW_MAXIMIZE);
+				return false;
+			});
 		};
 	}
 }
