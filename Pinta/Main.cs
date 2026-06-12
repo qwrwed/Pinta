@@ -42,6 +42,20 @@ internal sealed class MainClass
 			MacInterop.Environment.Init ();
 		}
 
+		if (SystemManager.GetOperatingSystem () == OS.Windows) {
+			// Switch the main (GTK) thread to system-DPI awareness so GTK scales
+			// the UI to the display scale; the .NET host otherwise forces
+			// per-monitor awareness, under which GTK 4 on Windows renders at 1x
+			// on fractional (e.g. 150%) scaling. Must run before GTK initializes.
+			WinInterop.WindowsIntegration.ApplySystemDpiAwareness ();
+
+			// Disable GTK's client-side decorations so the native Win32 title bar
+			// is used (native min/max/close in the corner, Aero Snap, etc.).
+			// Only takes effect with Gtk.ApplicationWindow (menu-bar mode); see
+			// MainWindow.IsUsingMenuBar(). Must be set before GTK initializes.
+			System.Environment.SetEnvironmentVariable ("GTK_CSD", "0");
+		}
+
 		string locale_dir = Path.Combine (SystemManager.GetDataRootDirectory (), "locale");
 
 		try {

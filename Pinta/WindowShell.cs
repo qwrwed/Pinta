@@ -63,6 +63,11 @@ public sealed class WindowShell
 			app_window.SetChild (app_layout);
 		}
 
+		// On Windows the native Win32 title bar (GTK_CSD=0) is light by default;
+		// opt into the dark title bar so it matches Pinta's dark UI.
+		if (SystemManager.GetOperatingSystem () == OS.Windows)
+			WinInterop.WindowsIntegration.ApplyDarkTitleBar (app_window);
+
 		app_window.Name = name;
 		app_window.Title = title;
 		app_window.DefaultWidth = width;
