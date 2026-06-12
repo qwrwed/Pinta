@@ -21,6 +21,8 @@ param(
     [string] $Rid = 'win-x64',
     # Optional: back up the current install here once, before the first replace.
     [string] $BackupDir = '',
+    # Skip launching the installed Pinta after install.
+    [switch] $NoLaunch,
     # Internal: the elevated copy phase re-invokes the script with this.
     [switch] $CopyPhase,
     [string] $ReleaseDir = ''
@@ -106,4 +108,16 @@ if ($BackupDir) { $elevArgs += @('-BackupDir', "`"$BackupDir`"") }
 $p = Start-Process powershell -Verb RunAs -Wait -PassThru -ArgumentList $elevArgs
 if ($p.ExitCode -ne 0) { throw "Elevated install failed (exit $($p.ExitCode))." }
 
-Write-Host "Done. Launch Pinta from its usual shortcut." -ForegroundColor Green
+Write-Host "Done." -ForegroundColor Green
+
+# Launch the freshly installed Pinta (non-elevated, so it runs as a normal
+# user rather than as admin like the copy phase).
+if (-not $NoLaunch) {
+    $exe = Join-Path $InstallDir 'bin\Pinta.exe'
+    if (Test-Path $exe) {
+        Write-Host "Launching $exe ..."
+        Start-Process $exe
+    } else {
+        Write-Warning "Installed Pinta.exe not found at $exe; launch it from its shortcut."
+    }
+}
