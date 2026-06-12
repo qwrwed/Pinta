@@ -65,8 +65,14 @@ public sealed class WindowShell
 
 		// On Windows the native Win32 title bar (GTK_CSD=0) is light by default;
 		// opt into the dark title bar so it matches Pinta's dark UI.
-		if (SystemManager.GetOperatingSystem () == OS.Windows)
+		if (SystemManager.GetOperatingSystem () == OS.Windows) {
 			WinInterop.WindowsIntegration.ApplyDarkTitleBar (app_window);
+
+			// GTK 4 on Windows shrinks a maximized window when it relayouts for
+			// a menu-bar popover (File/Edit), leaving it un-maximized in size
+			// while Windows still thinks it's maximized. Keep it stable.
+			WinInterop.WindowsIntegration.KeepMaximizedStable (app_window);
+		}
 
 		app_window.Name = name;
 		app_window.Title = title;
