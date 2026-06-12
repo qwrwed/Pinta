@@ -5,9 +5,8 @@ namespace Pinta.WinInterop;
 
 /// <summary>
 /// Small Windows-only helpers for the native Win32 title bar that GTK draws
-/// when GTK_CSD=0 is set (see Main.cs). The frame itself is fully native;
-/// the only thing Windows does not infer automatically is the title bar
-/// color, so we opt into the dark title bar to match Pinta's dark UI.
+/// when GTK_CSD=0 is set (see Main.cs): a dark title bar and system-DPI
+/// awareness.
 /// </summary>
 internal static partial class WindowsIntegration
 {
@@ -24,6 +23,15 @@ internal static partial class WindowsIntegration
 
 	[LibraryImport ("user32.dll")]
 	private static partial IntPtr SetThreadDpiAwarenessContext (IntPtr dpiContext);
+
+	[LibraryImport ("dwmapi.dll")]
+	private static partial int DwmSetWindowAttribute (IntPtr hwnd, uint dwAttribute, ref int pvAttribute, uint cbAttribute);
+
+	[LibraryImport ("libgtk-4-1.dll", EntryPoint = "gtk_native_get_surface")]
+	private static partial IntPtr GtkNativeGetSurface (IntPtr native);
+
+	[LibraryImport ("libgtk-4-1.dll", EntryPoint = "gdk_win32_surface_get_handle")]
+	private static partial IntPtr GdkWin32SurfaceGetHandle (IntPtr surface);
 
 	// DPI_AWARENESS_CONTEXT_SYSTEM_AWARE = (HANDLE)-2
 	private static readonly IntPtr DPI_AWARENESS_CONTEXT_SYSTEM_AWARE = -2;
@@ -42,21 +50,6 @@ internal static partial class WindowsIntegration
 	{
 		SetThreadDpiAwarenessContext (DPI_AWARENESS_CONTEXT_SYSTEM_AWARE);
 	}
-
-	[LibraryImport ("dwmapi.dll")]
-	private static partial int DwmSetWindowAttribute (IntPtr hwnd, uint dwAttribute, ref int pvAttribute, uint cbAttribute);
-
-	[LibraryImport ("libgtk-4-1.dll", EntryPoint = "gtk_native_get_surface")]
-	private static partial IntPtr GtkNativeGetSurface (IntPtr native);
-
-	[LibraryImport ("libgtk-4-1.dll", EntryPoint = "gdk_win32_surface_get_handle")]
-	private static partial IntPtr GdkWin32SurfaceGetHandle (IntPtr surface);
-
-	[LibraryImport ("user32.dll")]
-	private static partial IntPtr SendMessageW (IntPtr hWnd, uint msg, IntPtr wParam, IntPtr lParam);
-
-	private const uint WM_SYSCOMMAND = 0x0112;
-	private static readonly IntPtr SC_MAXIMIZE = 0xF030;
 
 	// Returns the native top-level HWND for a realized window, or Zero.
 	private static IntPtr GetRootHwnd (Gtk.ApplicationWindow window)
@@ -81,32 +74,6 @@ internal static partial class WindowsIntegration
 			if (hwnd == IntPtr.Zero) return;
 			int dark = 1;
 			DwmSetWindowAttribute (hwnd, DWMWA_USE_IMMERSIVE_DARK_MODE, ref dark, sizeof (int));
-		};
-	}
-
-	/// <summary>
-	/// Maximizes the window natively (Win32) once realized, instead of via GTK.
-	/// GTK's own Gtk.Window.Maximize() on Windows pins the window's minimum size
-	/// to the monitor size under system-DPI awareness, leaving it unable to be
-	/// resized, snapped, or un-maximized. The Win32 path does not.
-	///
-	/// Uses WM_SYSCOMMAND/SC_MAXIMIZE (the same message the maximize button
-	/// sends) rather than ShowWindow(SW_MAXIMIZE) so that GTK's window procedure
-	/// observes the maximize and tracks the maximized state. Otherwise GTK still
-	/// thinks the window is at a restored size and reverts it (un-maximizes)
-	/// when it next re-applies its geometry, e.g. after the add-in scan.
-	/// </summary>
-	public static void MaximizeNative (Gtk.ApplicationWindow window)
-	{
-		window.OnRealize += (_, _) => {
-			// Defer to an idle callback so the window is mapped/shown first;
-			// maximizing during realize is overridden by the subsequent show.
-			GLib.Functions.IdleAdd (0, () => {
-				IntPtr hwnd = GetRootHwnd (window);
-				if (hwnd != IntPtr.Zero)
-					SendMessageW (hwnd, WM_SYSCOMMAND, SC_MAXIMIZE, IntPtr.Zero);
-				return false;
-			});
 		};
 	}
 }

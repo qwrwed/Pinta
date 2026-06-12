@@ -74,16 +74,13 @@ public sealed class WindowShell
 		app_window.DefaultHeight = height;
 		app_window.Resizable = true;
 
-		if (maximize) {
-			if (SystemManager.GetOperatingSystem () == OS.Windows) {
-				// GTK's Maximize() on Windows pins the window's minimum size to the
-				// monitor under system-DPI awareness, leaving it stuck (can't resize,
-				// snap, or un-maximize). Maximize natively via Win32 instead.
-				WinInterop.WindowsIntegration.MaximizeNative (app_window);
-			} else {
-				app_window.Maximize ();
-			}
-		}
+		// On Windows, GTK's Maximize() triggers a GTK4/DPI layout bug: once the
+		// window enters GTK's maximized state, its content minimum gets pinned to
+		// the monitor size, so it can no longer be resized below full screen (even
+		// after un-maximizing). So don't auto-maximize on Windows - the window
+		// launches at its saved size and stays fully resizable.
+		if (maximize && SystemManager.GetOperatingSystem () != OS.Windows)
+			app_window.Maximize ();
 
 		shell_layout = Gtk.Box.New (Gtk.Orientation.Vertical, 0);
 		app_layout.SetContent (shell_layout);
