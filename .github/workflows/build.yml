@@ -109,14 +109,14 @@ jobs:
       run: dotnet test Pinta.sln -c Release
 
     - name: Add Cert to Keychain
-      if: github.event_name != 'pull_request'
+      if: github.event_name != 'pull_request' && github.repository_owner == 'PintaProject'
       uses: apple-actions/import-codesign-certs@v7
       with:
         p12-file-base64: ${{ secrets.MAC_CERTS_BASE64 }}
         p12-password: ${{ secrets.MAC_CERTS_PASSWORD }}
 
     - name: Build Installer
-      if: github.event_name != 'pull_request'
+      if: github.event_name != 'pull_request' && github.repository_owner == 'PintaProject'
       env:
         MAC_DEV_PASSWORD: ${{ secrets.MAC_DEV_PASSWORD }}
       run: |
@@ -124,7 +124,7 @@ jobs:
         ./build_installer.sh ${{matrix.build.dotnet_rid}}
 
     - name: Upload Installer
-      if: github.event_name != 'pull_request'
+      if: github.event_name != 'pull_request' && github.repository_owner == 'PintaProject'
       uses: actions/upload-artifact@v7
       with:
         name: "Pinta-${{matrix.build.dotnet_rid}}.dmg"
@@ -140,6 +140,9 @@ jobs:
     name: build-windows (${{matrix.build.dotnet_rid}})
 
     runs-on: ${{matrix.build.runner}}
+    permissions:
+      # Allow the job to create/upload GitHub Releases on tag pushes.
+      contents: write
     defaults:
       run:
         shell: msys2 {0}
@@ -181,26 +184,19 @@ jobs:
         path: installer/windows/Pinta.exe
         if-no-files-found: error
 
-    # Only enable signing for tagged releases.
-    - name: Sign Installer
+    # On a tag push, publish the installer to GitHub Releases. The upstream
+    # project signs the installer here via SignPath; this fork has no signing
+    # certificate, so the installer is unsigned (Windows SmartScreen will show
+    # an "unknown publisher" warning on download).
+    - name: Rename installer for release
       if: startsWith( github.ref, 'refs/tags/' )
-      uses: signpath/github-action-submit-signing-request@v2
-      with:
-        api-token: '${{ secrets.SIGNPATH_API_TOKEN }}'
-        organization-id: "fb6d32c7-2808-4358-b9eb-f7482eb8c0a5"
-        project-slug: Pinta
-        signing-policy-slug: release-signing
-        artifact-configuration-slug: Zipped_Exe
-        github-artifact-id: '${{ steps.upload-unsigned-installer.outputs.artifact-id }}'
-        wait-for-completion: true
-        output-artifact-directory: './signed-artifacts'
+      run: cp installer/windows/Pinta.exe "installer/windows/Pinta-${{matrix.build.dotnet_rid}}-Setup.exe"
 
-    - name: Upload Signed Installer
+    - name: Publish to GitHub Release
       if: startsWith( github.ref, 'refs/tags/' )
-      id: upload-signed-installer
-      uses: actions/upload-artifact@v7
+      uses: softprops/action-gh-release@v2
       with:
-        name: "Pinta-signed-${{matrix.build.dotnet_rid}}.exe"
-        path: ./signed-artifacts/Pinta.exe
-        if-no-files-found: error
+        files: installer/windows/Pinta-${{matrix.build.dotnet_rid}}-Setup.exe
+        fail_on_unmatched_files: true
+        generate_release_notes: true
 
