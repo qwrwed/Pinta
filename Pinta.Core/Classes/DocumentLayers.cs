@@ -12,7 +12,9 @@ public sealed class DocumentLayers
 	private readonly Document document;
 	private readonly List<UserLayer> user_layers = [];
 
-	private int layer_name_int = 2;
+	// The Background layer is conceptually "Layer 1", so auto-named user
+	// layers start numbering from here.
+	private const int FirstAutoLayerNumber = 2;
 
 	// The layer for tools to use until their output is committed
 	private Layer? tool_layer;
@@ -91,14 +93,18 @@ public sealed class DocumentLayers
 			? CreateLayer ()
 			: CreateLayer (name);
 
-		user_layers.Insert (CurrentUserLayerIndex + 1, layer);
+		int newLayerIndex = CurrentUserLayerIndex + 1;
+		user_layers.Insert (newLayerIndex, layer);
 
 		if (user_layers.Count == 1)
 			CurrentUserLayerIndex = 0;
 
 		layer.PropertyChanged += RaiseLayerPropertyChangedEvent;
 
-		LayerAdded?.Invoke (this, new IndexEventArgs (user_layers.Count - 1));
+		// Report the actual insertion index, not the top of the stack. Otherwise
+		// adding a layer above a non-top layer makes the list view bind the new
+		// row to the wrong layer (showing a duplicate name).
+		LayerAdded?.Invoke (this, new IndexEventArgs (newLayerIndex));
 
 		return layer;
 	}
@@ -129,8 +135,7 @@ public sealed class DocumentLayers
 		int? width = null,
 		int? height = null)
 	{
-		// Translators: {0} is a unique id for new layers, e.g. "Layer 2".
-		name ??= Translations.GetString ("Layer {0}", layer_name_int++);
+		name ??= GetUnusedLayerName ();
 		width ??= document.ImageSize.Width;
 		height ??= document.ImageSize.Height;
 
@@ -141,12 +146,33 @@ public sealed class DocumentLayers
 	}
 
 	/// <summary>
+	/// Returns an auto-generated layer name of the form "Layer N" that is not
+	/// already in use by an existing user layer, choosing the lowest available N.
+	/// </summary>
+	private string GetUnusedLayerName ()
+	{
+		HashSet<string> usedNames = new (user_layers.Count);
+		foreach (UserLayer layer in user_layers)
+			usedNames.Add (layer.Name);
+
+		// Translators: {0} is a unique id for new layers, e.g. "Layer 2".
+		int id = FirstAutoLayerNumber;
+		string name;
+		do {
+			name = Translations.GetString ("Layer {0}", id);
+			id++;
+		} while (usedNames.Contains (name));
+
+		return name;
+	}
+
+	/// <summary>
 	/// Creates a new SelectionLayer.
 	/// </summary>
 	[MemberNotNull (nameof (selection_layer))]
 	public void CreateSelectionLayer ()
 	{
-		selection_layer = CreateLayer ();
+		selection_layer = CreateLayer ("Selection Layer");
 	}
 
 	/// <summary>
@@ -155,7 +181,7 @@ public sealed class DocumentLayers
 	[MemberNotNull (nameof (selection_layer))]
 	public void CreateSelectionLayer (int width, int height)
 	{
-		selection_layer = CreateLayer (null, width, height);
+		selection_layer = CreateLayer ("Selection Layer", width, height);
 	}
 
 	/// <summary>
