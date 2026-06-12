@@ -53,10 +53,10 @@ internal static partial class WindowsIntegration
 	private static partial IntPtr GdkWin32SurfaceGetHandle (IntPtr surface);
 
 	[LibraryImport ("user32.dll")]
-	[return: MarshalAs (UnmanagedType.Bool)]
-	private static partial bool ShowWindow (IntPtr hWnd, int nCmdShow);
+	private static partial IntPtr SendMessageW (IntPtr hWnd, uint msg, IntPtr wParam, IntPtr lParam);
 
-	private const int SW_MAXIMIZE = 3;
+	private const uint WM_SYSCOMMAND = 0x0112;
+	private static readonly IntPtr SC_MAXIMIZE = 0xF030;
 
 	// Returns the native top-level HWND for a realized window, or Zero.
 	private static IntPtr GetRootHwnd (Gtk.ApplicationWindow window)
@@ -88,16 +88,23 @@ internal static partial class WindowsIntegration
 	/// Maximizes the window natively (Win32) once realized, instead of via GTK.
 	/// GTK's own Gtk.Window.Maximize() on Windows pins the window's minimum size
 	/// to the monitor size under system-DPI awareness, leaving it unable to be
-	/// resized, snapped, or un-maximized. The Win32 SW_MAXIMIZE path does not.
+	/// resized, snapped, or un-maximized. The Win32 path does not.
+	///
+	/// Uses WM_SYSCOMMAND/SC_MAXIMIZE (the same message the maximize button
+	/// sends) rather than ShowWindow(SW_MAXIMIZE) so that GTK's window procedure
+	/// observes the maximize and tracks the maximized state. Otherwise GTK still
+	/// thinks the window is at a restored size and reverts it (un-maximizes)
+	/// when it next re-applies its geometry, e.g. after the add-in scan.
 	/// </summary>
 	public static void MaximizeNative (Gtk.ApplicationWindow window)
 	{
 		window.OnRealize += (_, _) => {
 			// Defer to an idle callback so the window is mapped/shown first;
-			// SW_MAXIMIZE during realize is overridden by the subsequent show.
+			// maximizing during realize is overridden by the subsequent show.
 			GLib.Functions.IdleAdd (0, () => {
 				IntPtr hwnd = GetRootHwnd (window);
-				if (hwnd != IntPtr.Zero) ShowWindow (hwnd, SW_MAXIMIZE);
+				if (hwnd != IntPtr.Zero)
+					SendMessageW (hwnd, WM_SYSCOMMAND, SC_MAXIMIZE, IntPtr.Zero);
 				return false;
 			});
 		};
