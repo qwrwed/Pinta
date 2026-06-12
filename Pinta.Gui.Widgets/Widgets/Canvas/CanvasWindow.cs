@@ -185,7 +185,8 @@ public sealed class CanvasWindow : Gtk.Grid
 
 		// These coordinates are relative to our grid widget, so transform into the child image
 		// view's coordinates, and then to the canvas coordinates.
-		this.TranslateCoordinates (Canvas, rootPoint, out PointD viewPos);
+		this.TranslateCoordinates (Canvas, rootPoint, out PointD widgetPoint);
+		PointD viewPos = WidgetPointToView (widgetPoint);
 
 		current_canvas_pos = document.Workspace.ViewPointToCanvas (viewPos);
 		horizontal_ruler.Position = current_canvas_pos.X;
@@ -207,6 +208,40 @@ public sealed class CanvasWindow : Gtk.Grid
 		};
 
 		tools.DoMouseMove (document, tool_args);
+	}
+
+	/// <summary>
+	/// Converts a point in the canvas widget's allocation into view coordinates
+	/// (ViewSize space). The canvas is a <see cref="Gtk.Picture"/> that scales the
+	/// displayed image down to fit when the viewport is smaller than the image's
+	/// ViewSize (Picture.CanShrink). The image is drawn centered and aspect-preserved
+	/// within the allocation, so a widget point must be un-letterboxed and un-scaled
+	/// back into ViewSize space - otherwise strokes land away from the cursor when the
+	/// window is smaller than the canvas.
+	/// </summary>
+	private PointD WidgetPointToView (PointD widgetPoint)
+	{
+		Size viewSize = document.Workspace.ViewSize;
+		double allocW = Canvas.GetWidth ();
+		double allocH = Canvas.GetHeight ();
+		if (allocW <= 0 || allocH <= 0 || viewSize.Width <= 0 || viewSize.Height <= 0)
+			return widgetPoint;
+
+		// How much the picture is scaled to fit the allocation. The widget is never
+		// allocated larger than its ViewSize request (Hexpand=false), so this only
+		// shrinks; clamp to 1 to be safe.
+		double displayScale = Math.Min (Math.Min (allocW / viewSize.Width, allocH / viewSize.Height), 1.0);
+		if (displayScale <= 0)
+			return widgetPoint;
+
+		double dispW = viewSize.Width * displayScale;
+		double dispH = viewSize.Height * displayScale;
+		double offX = (allocW - dispW) / 2.0;
+		double offY = (allocH - dispH) / 2.0;
+
+		return new PointD (
+			(widgetPoint.X - offX) / displayScale,
+			(widgetPoint.Y - offY) / displayScale);
 	}
 
 	private void HandleGestureZoomScaleChanged (object? sender, EventArgs e)
@@ -355,7 +390,8 @@ public sealed class CanvasWindow : Gtk.Grid
 		// Send the mouse press event to the current tool.
 		// Translate coordinates to the canvas widget.
 		PointD rootPoint = new (args.StartX, args.StartY);
-		this.TranslateCoordinates (Canvas, rootPoint, out PointD viewPoint);
+		this.TranslateCoordinates (Canvas, rootPoint, out PointD widgetPoint);
+		PointD viewPoint = WidgetPointToView (widgetPoint);
 		PointD canvasPoint = document.Workspace.ViewPointToCanvas (viewPoint);
 
 		ToolMouseEventArgs tool_args = new () {
@@ -375,7 +411,8 @@ public sealed class CanvasWindow : Gtk.Grid
 		PointD rootPoint = new (startX + args.OffsetX, startY + args.OffsetY);
 
 		// Translate coordinates to the canvas widget.
-		this.TranslateCoordinates (Canvas, rootPoint, out PointD viewPoint);
+		this.TranslateCoordinates (Canvas, rootPoint, out PointD widgetPoint);
+		PointD viewPoint = WidgetPointToView (widgetPoint);
 
 		current_canvas_pos = document.Workspace.ViewPointToCanvas (viewPoint);
 		if (document.Workspace.PointInCanvas (current_canvas_pos))
@@ -399,7 +436,8 @@ public sealed class CanvasWindow : Gtk.Grid
 		PointD rootPoint = new (startX + args.OffsetX, startY + args.OffsetY);
 
 		// Translate coordinates to the canvas widget.
-		this.TranslateCoordinates (Canvas, rootPoint, out PointD viewPoint);
+		this.TranslateCoordinates (Canvas, rootPoint, out PointD widgetPoint);
+		PointD viewPoint = WidgetPointToView (widgetPoint);
 		PointD canvasPoint = document.Workspace.ViewPointToCanvas (viewPoint);
 
 		// Send the mouse release event to the current tool.
