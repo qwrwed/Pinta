@@ -362,8 +362,12 @@ internal sealed class MainWindow
 
 	private bool IsUsingMenuBar ()
 	{
-		// On macOS the global menubar should be used by default.
-		bool use_menubar_default = SystemManager.GetOperatingSystem () == OS.Mac;
+		// On macOS the global menubar should be used by default. On Windows the
+		// menu bar (a regular Gtk.ApplicationWindow) is used by default so that
+		// the native Win32 title bar is drawn instead of GTK's client-side
+		// decorations, giving native window buttons and Aero Snap (see the
+		// GTK_CSD=0 setting in Main.cs).
+		bool use_menubar_default = SystemManager.GetOperatingSystem () is OS.Mac or OS.Windows;
 
 		return PintaCore.Settings.GetSetting (SettingNames.MENUBAR_SHOWN, use_menubar_default);
 	}
