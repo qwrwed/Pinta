@@ -134,6 +134,8 @@ jobs:
   build-windows:
     # Build for both x64 and arm64
     strategy:
+      # Don't cancel the x64 build if the arm64 build fails (or vice versa).
+      fail-fast: false
       matrix:
         build: [ { dotnet_rid: win-x64, mingw_folder: "${MINGW_PREFIX}/../clang64", mingw_system: clang64, mingw_repo: clang-x86_64, setup_arch: x64os, runner: windows-2025 }, { dotnet_rid: win-arm64, mingw_folder: "${MINGW_PREFIX}/../clangarm64", mingw_system: clangarm64, mingw_repo: clang-aarch64, setup_arch: arm64, runner: windows-11-arm }]
 
