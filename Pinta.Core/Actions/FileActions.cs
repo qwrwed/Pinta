@@ -38,6 +38,7 @@ public sealed class FileActions
 	public Command Close { get; }
 	public Command Save { get; }
 	public Command SaveAs { get; }
+	public Command ExportAs { get; }
 	public Command Print { get; }
 
 	public event EventHandler<ModifyCompressionEventArgs>? ModifyCompression;
@@ -97,6 +98,13 @@ public sealed class FileActions
 			Resources.StandardIcons.DocumentSaveAs,
 			shortcuts: ["<Primary><Shift>S"]);
 
+		ExportAs = new Command (
+			"exportAs",
+			Translations.GetString ("Export As..."),
+			null,
+			Resources.StandardIcons.DocumentSave,
+			shortcuts: ["<Primary>E"]);
+
 		Print = new Command (
 			"print",
 			Translations.GetString ("Print"),
@@ -114,6 +122,7 @@ public sealed class FileActions
 		Gio.Menu save_section = Gio.Menu.New ();
 		save_section.AppendItem (Save.CreateMenuItem ());
 		save_section.AppendItem (SaveAs.CreateMenuItem ());
+		save_section.AppendItem (ExportAs.CreateMenuItem ());
 
 		Gio.Menu close_section = Gio.Menu.New ();
 		close_section.AppendItem (Close.CreateMenuItem ());
@@ -136,6 +145,7 @@ public sealed class FileActions
 
 			Save,
 			SaveAs,
+			ExportAs,
 
 			Close]);
 
