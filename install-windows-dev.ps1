@@ -36,8 +36,31 @@ if ($CopyPhase) {
     }
     foreach ($d in 'bin', 'lib', 'share') {
         $target = Join-Path $InstallDir $d
+        $source = Join-Path $ReleaseDir $d
+
+        # In bin, preserve user-added files (e.g. addin DLLs copied next to
+        # Pinta.exe) that aren't part of the published build, so reinstalling
+        # doesn't wipe them. Stash them, then restore after the bin is replaced.
+        $stash = $null
+        if ($d -eq 'bin' -and (Test-Path $target)) {
+            $buildNames = (Get-ChildItem $source -File -ErrorAction SilentlyContinue).Name
+            $extras = Get-ChildItem $target -File -ErrorAction SilentlyContinue |
+                Where-Object { $buildNames -notcontains $_.Name }
+            if ($extras) {
+                $stash = Join-Path $env:TEMP ("pinta-extras-" + [guid]::NewGuid().ToString('N'))
+                New-Item -ItemType Directory -Path $stash | Out-Null
+                $extras | ForEach-Object { Copy-Item $_.FullName $stash -Force }
+                Write-Host ("Preserving user files in bin: " + (($extras.Name) -join ', '))
+            }
+        }
+
         if (Test-Path $target) { Remove-Item $target -Recurse -Force }
-        Copy-Item (Join-Path $ReleaseDir $d) $target -Recurse -Force
+        Copy-Item $source $target -Recurse -Force
+
+        if ($stash) {
+            Get-ChildItem $stash -File | ForEach-Object { Copy-Item $_.FullName (Join-Path $target $_.Name) -Force }
+            Remove-Item $stash -Recurse -Force
+        }
     }
     Write-Host "Installed to $InstallDir"
     return
