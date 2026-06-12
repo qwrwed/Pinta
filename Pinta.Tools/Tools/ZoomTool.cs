@@ -61,7 +61,7 @@ public sealed class ZoomTool : BaseTool
 		"\nClick and drag to zoom in selection.");
 	public override Gdk.Cursor DefaultCursor => cursor_zoom;
 	public override Gdk.Key ShortcutKey => new (Gdk.Constants.KEY_Z);
-	public override int Priority => 9;
+	public override int Priority => 12;
 
 	protected override void OnMouseDown (Document document, ToolMouseEventArgs e)
 	{

@@ -43,7 +43,7 @@ public sealed class LineCurveTool : ShapeTool
 	public override string Name => Translations.GetString ("Line/Curve");
 	public override string Icon => Pinta.Resources.Icons.ToolLine;
 	public override Gdk.Cursor DefaultCursor { get; }
-	public override int Priority => 37;
+	public override int Priority => 18;
 
 	public override BaseEditEngine.ShapeTypes ShapeType
 		=> BaseEditEngine.ShapeTypes.OpenLineCurveSeries;

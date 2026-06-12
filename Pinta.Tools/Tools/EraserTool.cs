@@ -62,7 +62,7 @@ public sealed class EraserTool : BaseBrushTool
 	public override Gdk.Key ShortcutKey
 		=> new (Gdk.Constants.KEY_E);
 
-	public override int Priority => 27;
+	public override int Priority => 15;
 
 	public override Gdk.Cursor DefaultCursor {
 		get {

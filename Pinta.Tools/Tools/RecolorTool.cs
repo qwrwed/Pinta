@@ -60,7 +60,7 @@ public class RecolorTool : BaseBrushTool
 	public override Gdk.Cursor DefaultCursor => Gdk.Cursor.NewFromTexture (Resources.GetIcon ("Cursor.Recolor.png"), 9, 18, null);
 	public override Gdk.Key ShortcutKey => new (Gdk.Constants.KEY_R);
 	protected float Tolerance => (float) (ToleranceSlider.GetValue () / 100);
-	public override int Priority => 49;
+	public override int Priority => 17;
 
 	protected override void OnBuildToolBar (Box tb)
 	{

@@ -58,7 +58,7 @@ public sealed class PaintBrushTool : BaseBrushTool
 	public override string StatusBarText => Translations.GetString ("Left click to draw with primary color, right click to draw with secondary color.");
 	public override bool CursorChangesOnZoom => true;
 	public override Gdk.Key ShortcutKey => new (Gdk.Constants.KEY_B);
-	public override int Priority => 21;
+	public override int Priority => 6;
 
 	public override Gdk.Cursor DefaultCursor {
 		get {

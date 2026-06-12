@@ -43,7 +43,7 @@ public sealed class RectangleTool : ShapeTool
 	public override string Name => Translations.GetString ("Rectangle");
 	public override string Icon => Pinta.Resources.Icons.ToolRectangle;
 	public override Gdk.Cursor DefaultCursor { get; }
-	public override int Priority => 39;
+	public override int Priority => 19;
 
 	public override BaseEditEngine.ShapeTypes ShapeType
 		=> BaseEditEngine.ShapeTypes.ClosedLineCurveSeries;

@@ -42,7 +42,7 @@ public sealed class RectangleSelectTool : SelectTool
 		"Click and drag to draw a rectangular selection." +
 		"\nHold Shift to constrain to a square.");
 	public override Gdk.Cursor DefaultCursor { get; }
-	public override int Priority => 13;
+	public override int Priority => 1;
 
 	protected override void DrawShape (Document document, RectangleD r, Layer l)
 	{

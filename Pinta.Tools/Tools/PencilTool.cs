@@ -52,7 +52,7 @@ public sealed class PencilTool : BaseTool
 		"\nRight click to use the secondary color.");
 	public override Gdk.Cursor DefaultCursor => Gdk.Cursor.NewFromTexture (Resources.GetIcon ("Cursor.Pencil.png"), 7, 24, null);
 	public override Gdk.Key ShortcutKey => new (Gdk.Constants.KEY_P);
-	public override int Priority => 25;
+	public override int Priority => 7;
 	protected override bool ShowAlphaBlendingButton => true;
 
 	protected override void OnMouseDown (Document document, ToolMouseEventArgs e)

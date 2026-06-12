@@ -48,7 +48,7 @@ public sealed class MagicWandTool : FloodTool
 	public override string Icon => Pinta.Resources.Icons.ToolSelectMagicWand;
 	public override string StatusBarText => Translations.GetString ("Click to select region of similar color.");
 	public override Gdk.Cursor DefaultCursor => Gdk.Cursor.NewFromTexture (Resources.GetIcon ("Cursor.MagicWand.png"), 21, 10, null);
-	public override int Priority => 19;
+	public override int Priority => 4;
 	public override bool IsSelectionTool => true;
 
 	protected override void OnBuildToolBar (Gtk.Box tb)

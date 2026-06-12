@@ -46,7 +46,7 @@ public sealed class PaintBucketTool : FloodTool
 	public override string StatusBarText => Translations.GetString ("Left click to fill a region with the primary color, right click to fill with the secondary color.");
 	public override Gdk.Cursor DefaultCursor => Gdk.Cursor.NewFromTexture (Resources.GetIcon ("Cursor.PaintBucket.png"), 21, 21, null);
 	public override Gdk.Key ShortcutKey => new (Gdk.Constants.KEY_F);
-	public override int Priority => 29;
+	public override int Priority => 5;
 	protected override bool CalculatePolygonSet => false;
 
 	protected override void OnMouseDown (Document document, ToolMouseEventArgs e)

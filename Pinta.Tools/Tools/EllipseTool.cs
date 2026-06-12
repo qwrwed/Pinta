@@ -49,7 +49,7 @@ public sealed class EllipseTool : ShapeTool
 
 	public override Gdk.Cursor DefaultCursor { get; }
 
-	public override int Priority => 43;
+	public override int Priority => 21;
 
 	public override BaseEditEngine.ShapeTypes ShapeType
 		=> BaseEditEngine.ShapeTypes.Ellipse;

@@ -40,7 +40,7 @@ public sealed class EllipseSelectTool : SelectTool
 	public override string Icon => Pinta.Resources.Icons.ToolSelectEllipse;
 	public override string StatusBarText => Translations.GetString ("Click and drag to draw an elliptical selection.\nHold Shift to constrain to a circle.");
 	public override Gdk.Cursor DefaultCursor { get; }
-	public override int Priority => 15;
+	public override int Priority => 3;
 
 	protected override void DrawShape (Document document, RectangleD r, Layer l)
 	{

@@ -89,7 +89,7 @@ public sealed class TextTool : BaseTool
 		=> new (Gdk.Constants.KEY_T);
 
 	public override int Priority
-		=> 35;
+		=> 9;
 
 	public override string StatusBarText
 		=> Translations.GetString ("Left click to place cursor, then type desired text. Text color is primary color.");

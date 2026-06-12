@@ -56,7 +56,7 @@ public sealed class MoveSelectionTool : BaseTransformTool
 
 	public override Gdk.Cursor DefaultCursor => Gdk.Cursor.NewFromTexture (Resources.GetIcon (Pinta.Resources.Icons.ToolMoveSelection), 0, 0, null);
 	public override Gdk.Key ShortcutKey => new (Gdk.Constants.KEY_M);
-	public override int Priority => 7;
+	public override int Priority => 11;
 	public override bool IsSelectionTool => true;
 
 	protected override RectangleD GetSourceRectangle (Document document)

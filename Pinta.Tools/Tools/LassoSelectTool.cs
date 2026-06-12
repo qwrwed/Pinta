@@ -60,7 +60,7 @@ public sealed class LassoSelectTool : BaseTool
 									"\nPress Backspace to delete the last point.");
 	public override Gdk.Key ShortcutKey => new (Gdk.Constants.KEY_S);
 	public override Gdk.Cursor DefaultCursor => Gdk.Cursor.NewFromTexture (Resources.GetIcon ("Cursor.LassoSelect.png"), 9, 18, null);
-	public override int Priority => 17;
+	public override int Priority => 2;
 	public override bool IsSelectionTool => true;
 
 	private bool IsPolygonMode => LassoModeButtom.SelectedItem.GetTagOrDefault (false);

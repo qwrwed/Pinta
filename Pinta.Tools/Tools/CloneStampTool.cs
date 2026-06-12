@@ -49,7 +49,7 @@ public sealed class CloneStampTool : BaseBrushTool
 	public override string StatusBarText => Translations.GetString ("{0} + left click to set origin, left click to paint.", system_manager.CtrlLabel ());
 	public override bool CursorChangesOnZoom => true;
 	public override Gdk.Key ShortcutKey => new (Gdk.Constants.KEY_L);
-	public override int Priority => 47;
+	public override int Priority => 8;
 	protected override bool ShowAntialiasingButton => true;
 
 	public override Cursor DefaultCursor {
