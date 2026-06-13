@@ -25,18 +25,52 @@
 // THE SOFTWARE.
 
 using System;
+using System.Collections.Generic;
+using System.Collections.Immutable;
+using System.Linq;
 using Gtk;
 
 namespace Pinta.Core;
 
 public sealed class RecentFileManager
 {
+	/// <summary>
+	/// The maximum number of files shown in the "Open Recent" menu.
+	/// </summary>
+	private const int MaxRecentFiles = 10;
+
+	private const string RecentFilesSettingKey = "recent-files";
+
+	// URIs are percent-encoded, so a newline can never appear within one and is safe as a separator.
+	private static readonly char[] uri_separator = ['\n'];
+
+	private readonly ISettingsService settings;
+	private readonly List<string> recent_uris;
+
 	private Gio.File? last_dialog_directory;
 
-	public RecentFileManager ()
+	/// <summary>
+	/// Raised whenever the list of recently-used files changes.
+	/// </summary>
+	public event EventHandler? RecentFilesChanged;
+
+	public RecentFileManager (ISettingsService settings)
 	{
+		this.settings = settings;
+
 		last_dialog_directory = DefaultDialogDirectory;
+
+		recent_uris = settings
+			.GetSetting (RecentFilesSettingKey, string.Empty)
+			.Split (uri_separator, StringSplitOptions.RemoveEmptyEntries)
+			.Take (MaxRecentFiles)
+			.ToList ();
 	}
+
+	/// <summary>
+	/// The recently-used file URIs, ordered from most to least recently used.
+	/// </summary>
+	public ImmutableArray<string> RecentFiles => [.. recent_uris];
 
 	public Gio.File? LastDialogDirectory {
 		get => last_dialog_directory;
@@ -69,6 +103,47 @@ public sealed class RecentFileManager
 	/// </summary>
 	public void AddFile (Gio.File file)
 	{
-		RecentManager.GetDefault ().AddItem (file.GetUri ());
+		string uri = file.GetUri ();
+
+		RecentManager.GetDefault ().AddItem (uri);
+
+		// Move the file to the front of the list, removing any earlier occurrence.
+		recent_uris.RemoveAll (u => u == uri);
+		recent_uris.Insert (0, uri);
+
+		if (recent_uris.Count > MaxRecentFiles)
+			recent_uris.RemoveRange (MaxRecentFiles, recent_uris.Count - MaxRecentFiles);
+
+		OnRecentFilesChanged ();
+	}
+
+	/// <summary>
+	/// Remove a file from the list of recently-used files, e.g. if it no longer exists.
+	/// </summary>
+	public void RemoveFile (string uri)
+	{
+		if (recent_uris.RemoveAll (u => u == uri) == 0)
+			return;
+
+		OnRecentFilesChanged ();
+	}
+
+	/// <summary>
+	/// Clear the list of recently-used files.
+	/// </summary>
+	public void ClearRecentFiles ()
+	{
+		if (recent_uris.Count == 0)
+			return;
+
+		recent_uris.Clear ();
+
+		OnRecentFilesChanged ();
+	}
+
+	private void OnRecentFilesChanged ()
+	{
+		settings.PutSetting (RecentFilesSettingKey, string.Join ('\n', recent_uris));
+		RecentFilesChanged?.Invoke (this, EventArgs.Empty);
 	}
 }
