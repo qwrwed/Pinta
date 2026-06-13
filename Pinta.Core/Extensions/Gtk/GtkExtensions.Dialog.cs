@@ -59,6 +59,20 @@ partial class GtkExtensions
 		return choice;
 	}
 
+	public static async Task<Gio.File?> SaveFileAsync (
+		this Gtk.FileDialog fileDialog,
+		Gtk.Window parent)
+	{
+		try {
+			return await fileDialog.SaveAsync (parent);
+		} catch (GLib.GException) {
+			// Docs: https://docs.gtk.org/gtk4/method.FileDialog.save_finish.html
+			// An error is set if the user cancels.
+			// TODO: filter by error code once gir.core allows for that
+			return null;
+		}
+	}
+
 	public static async Task<IReadOnlyList<Gio.File>?> OpenFilesAsync (
 		this Gtk.FileDialog fileDialog,
 		Gtk.Window parent)

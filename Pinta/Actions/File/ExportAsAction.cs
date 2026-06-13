@@ -24,7 +24,6 @@
 // THE SOFTWARE.
 
 using System;
-using System.Collections.Generic;
 using System.IO;
 using System.Threading.Tasks;
 using Pinta.Core;
@@ -70,43 +69,35 @@ internal sealed class ExportAsAction : IActionHandler
 		Document document = workspace.ActiveDocument;
 		Gtk.Window parent = chrome.MainWindow;
 
-		var fcd = Gtk.FileChooserNative.New (
-			Translations.GetString ("Export As"),
-			parent,
-			Gtk.FileChooserAction.Save,
-			Translations.GetString ("Export"),
-			Translations.GetString ("Cancel"));
-
-		// Add every format we can export to, remembering the filter -> format mapping.
-		Dictionary<Gtk.FileFilter, FormatDescriptor> filetypes = [];
+		// Add every format we can export to.
+		using Gio.ListStore filters = Gio.ListStore.New (Gtk.FileFilter.GetGType ());
 		foreach (var exportable in image_formats.Formats) {
 			if (!exportable.IsExportAvailable ())
 				continue;
-			fcd.AddFilter (exportable.Filter);
-			filetypes.Add (exportable.Filter, exportable);
+			filters.Append (exportable.Filter);
 		}
 
 		// Default the dropdown (and filename extension) to PNG.
 		FormatDescriptor png = image_formats.GetFormatByExtension ("png")!;
-		fcd.Filter = png.Filter;
 		string baseName = Path.GetFileNameWithoutExtension (document.DisplayName);
-		fcd.SetCurrentName ($"{baseName}.png");
 
-		if (await fcd.RunAsync () != Gtk.ResponseType.Accept)
+		using Gtk.FileDialog fileDialog = Gtk.FileDialog.New ();
+		fileDialog.SetTitle (Translations.GetString ("Export As"));
+		fileDialog.SetFilters (filters);
+		fileDialog.SetDefaultFilter (png.Filter);
+		fileDialog.SetInitialName ($"{baseName}.png");
+		fileDialog.Modal = true;
+
+		Gio.File? destination = await fileDialog.SaveFileAsync (parent);
+		if (destination is null)
 			return;
 
-		Gio.File destination = fcd.GetFile ()!;
 		string displayName = destination.GetParent ()!.GetRelativePath (destination)!;
 
-		// Follow the extension the user typed, falling back to the selected
-		// dropdown filter, then to PNG.
+		// Follow the extension the user typed, falling back to PNG.
 		FormatDescriptor? format = image_formats.GetFormatByFile (displayName);
-		if (format is null || !format.IsExportAvailable ()) {
-			if (fcd.Filter is not null && filetypes.TryGetValue (fcd.Filter, out var filtered))
-				format = filtered;
-			else
-				format = png;
-		}
+		if (format is null || !format.IsExportAvailable ())
+			format = png;
 
 		if (format.Exporter is not IImageExporter exporter)
 			return;

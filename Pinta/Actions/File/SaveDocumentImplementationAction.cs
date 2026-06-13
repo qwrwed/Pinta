@@ -89,26 +89,12 @@ internal sealed class SaveDocumentImplmentationAction : IActionHandler
 	// been saved before.  Either way, we need to prompt for a filename.
 	private async Task<bool> SaveFileAs (Document document)
 	{
-		var fcd = Gtk.FileChooserNative.New (
-			Translations.GetString ("Save Image File"),
-			chrome.MainWindow,
-			Gtk.FileChooserAction.Save,
-			Translations.GetString ("Save"),
-			Translations.GetString ("Cancel"));
-
-		// Add all the formats we support to the save dialog
-		Dictionary<Gtk.FileFilter, FormatDescriptor> filetypes = [];
+		// Add all the formats we support to the save dialog.
+		using Gio.ListStore filters = Gio.ListStore.New (Gtk.FileFilter.GetGType ());
 		foreach (var format in image_formats.Formats) {
-
 			if (!format.IsExportAvailable ())
 				continue;
-
-			fcd.AddFilter (format.Filter);
-			filetypes.Add (format.Filter, format);
-
-			// Set the filter to anything we found
-			// We want to ensure that *something* is selected in the filetype
-			fcd.Filter = format.Filter;
+			filters.Append (format.Filter);
 		}
 
 		// Determine which format's filter to pre-select, and suggest a matching filename.
@@ -116,9 +102,15 @@ internal sealed class SaveDocumentImplmentationAction : IActionHandler
 			? image_formats.GetFormatByFile (document.DisplayName)
 			: null;
 
+		// How to seed the dialog each time it's shown. Either an existing file (keep
+		// its name + folder) or a folder + suggested name. Updated on a re-prompt.
+		Gio.File? initialFile = null;
+		Gio.File? initialFolder = null;
+		string? initialName = null;
+
 		if (document.HasFile && format_desc is not null && format_desc.IsExportAvailable ()) {
 			// The document's own format can be written: keep its existing name and extension.
-			fcd.SetFile (document.File!);
+			initialFile = document.File!;
 		} else {
 			// Either an unsaved document or one whose format Pinta can't write (e.g. an
 			// imported .pdn). Fall back to a writable default and suggest a filename whose
@@ -127,28 +119,47 @@ internal sealed class SaveDocumentImplmentationAction : IActionHandler
 			string default_ext = format_desc.Extensions.First ();
 
 			if (document.HasFile) {
-				if (document.File!.GetParent () is Gio.File parent)
-					fcd.SetCurrentFolder (parent);
-
+				initialFolder = document.File!.GetParent ();
 				string baseName = System.IO.Path.GetFileNameWithoutExtension (document.DisplayName);
-				fcd.SetCurrentName ($"{baseName}.{default_ext}");
+				initialName = $"{baseName}.{default_ext}";
 			} else {
 				if (recent_files.GetDialogDirectory () is Gio.File dir && dir.QueryExists (null))
-					fcd.SetCurrentFolder (dir);
+					initialFolder = dir;
 
 				// Append the default extension, producing e.g. "Unsaved Image 1.png"
-				fcd.SetCurrentName ($"{document.DisplayName}.{default_ext}");
+				initialName = $"{document.DisplayName}.{default_ext}";
 			}
 		}
 
-		fcd.Filter = format_desc.Filter;
+		while (true) {
 
-		while (await fcd.RunAsync () == Gtk.ResponseType.Accept) {
+			using Gtk.FileDialog fileDialog = Gtk.FileDialog.New ();
+			fileDialog.SetTitle (Translations.GetString ("Save Image File"));
+			fileDialog.SetFilters (filters);
+			fileDialog.SetDefaultFilter (format_desc.Filter);
+			fileDialog.Modal = true;
 
-			Gio.File file = fcd.GetFile ()!;
+			if (initialFile is not null) {
+				fileDialog.SetInitialFile (initialFile);
+			} else {
+				if (initialFolder is not null)
+					fileDialog.SetInitialFolder (initialFolder);
+				if (initialName is not null)
+					fileDialog.SetInitialName (initialName);
+			}
+
+			Gio.File? file = await fileDialog.SaveFileAsync (chrome.MainWindow);
+			if (file is null)
+				return false;
 
 			// Note that we can't use file.GetDisplayName() because the file doesn't exist.
 			string displayName = file.GetParent ()!.GetRelativePath (file)!;
+			Gio.File? directory = file.GetParent ();
+
+			// Seed any re-prompt with the chosen name and folder.
+			initialFile = null;
+			initialFolder = directory;
+			initialName = displayName;
 
 			// Always follow the extension rather than the file type drop down
 			// ie: if the user chooses to save a "jpeg" as "foo.png", we are going
@@ -158,27 +169,20 @@ internal sealed class SaveDocumentImplmentationAction : IActionHandler
 			if (format is not null && !format.IsExportAvailable ()) {
 				// The typed extension maps to a format Pinta can only open, not write
 				// (e.g. .pdn). Don't silently write a different format under this extension;
-				// keep the dialog open so the user can choose a writable name/type.
+				// re-prompt so the user can choose a writable name/type.
 				await chrome.ShowMessageDialog (
 					chrome.MainWindow,
 					UnsupportedFormatHeading (displayName),
 					Translations.GetString ("Pinta does not support saving images in this file format."));
-				fcd.SetCurrentName (displayName);
 				continue;
 			}
 
-			if (format is null) {
-				if (fcd.Filter is not null)
-					format = filetypes[fcd.Filter];
-				else // Somehow, no file filter was selected...
-					format = image_formats.GetDefaultSaveFormat ();
-			}
+			// No recognized extension: fall back to a writable default.
+			format ??= image_formats.GetDefaultSaveFormat ();
 
 			if (!await ConfirmFlatten (document, format)) {
 				continue;
 			}
-
-			Gio.File? directory = file.GetParent ();
 
 			if (directory is not null)
 				recent_files.LastDialogDirectory = directory;
@@ -186,9 +190,6 @@ internal sealed class SaveDocumentImplmentationAction : IActionHandler
 			// If saving the file failed or was cancelled, let the user select
 			// a different file type.
 			if (!await SaveFile (document, file, format, chrome.MainWindow)) {
-				// Re-set the current name and directory
-				fcd.SetCurrentName (displayName);
-				fcd.SetCurrentFolder (directory);
 				continue;
 			}
 
@@ -203,8 +204,6 @@ internal sealed class SaveDocumentImplmentationAction : IActionHandler
 			document.FileType = format.Extensions.First ();
 			return true;
 		}
-
-		return false;
 	}
 
 	private async Task<bool> SaveFile (Document document, Gio.File? file, FormatDescriptor? format, Gtk.Window parent)
