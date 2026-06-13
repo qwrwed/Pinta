@@ -297,6 +297,13 @@ public sealed class WorkspaceManager : IWorkspaceService
 	{
 		parent ??= chrome_manager.MainWindow;
 
+		// A missing file (e.g. a recent file that was moved or deleted) is an expected
+		// condition, not a crash, so show a friendly message rather than the error dialog.
+		if (!file.QueryExists (null)) {
+			ShowFileNotFoundDialog (parent, file.GetParseName ());
+			return false;
+		}
+
 		try {
 			// Open the image and add it to the layers
 			IImageImporter? importer = image_formats.GetImporterByFile (file.GetDisplayName ());
@@ -436,6 +443,24 @@ public sealed class WorkspaceManager : IWorkspaceService
 
 		return chrome_manager.ShowErrorDialog (parent, message, body.ToString (), errors);
 	}
+
+	private Task ShowFileNotFoundDialog (
+		Gtk.Window parent,
+		string filename)
+	{
+		string message = Translations.GetString ("Failed to open image");
+
+		// Translators: {0} is the name of a file that no longer exists.
+		string details = Translations.GetString ("The file '{0}' could not be found.", AllowPathWrapping (filename));
+
+		return chrome_manager.ShowMessageDialog (parent, message, details);
+	}
+
+	// A long path is a single space-less token, so Pango's label wrapping falls back to
+	// breaking mid-word at arbitrary characters. Inserting a zero-width space before each
+	// separator gives it break opportunities, so it wraps cleanly at directory boundaries.
+	private static string AllowPathWrapping (string path)
+		=> path.Replace ("\\", "\u200B\\").Replace ("/", "\u200B/");
 
 	private Task ShowFilePermissionErrorDialog (
 		Gtk.Window parent,
