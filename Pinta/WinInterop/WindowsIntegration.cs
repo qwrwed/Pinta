@@ -28,6 +28,7 @@ internal static partial class WindowsIntegration
 	private const uint SC_MINIMIZE = 0xF020;
 	private const uint SWP_NOSIZE = 0x0001;
 	private const uint SWP_HIDEWINDOW = 0x0080;
+	private const uint SWP_SHOWWINDOW = 0x0040;
 
 	[LibraryImport ("user32.dll")]
 	private static partial IntPtr GetAncestor (IntPtr hWnd, uint gaFlags);
@@ -64,6 +65,10 @@ internal static partial class WindowsIntegration
 
 	[LibraryImport ("user32.dll")]
 	private static partial IntPtr GetWindow (IntPtr hWnd, uint uCmd);
+
+	[LibraryImport ("user32.dll")]
+	[return: MarshalAs (UnmanagedType.Bool)]
+	private static partial bool EnableWindow (IntPtr hWnd, [MarshalAs (UnmanagedType.Bool)] bool bEnable);
 
 	// GetWindow command: the window's owner.
 	private const uint GW_OWNER = 4;
@@ -117,6 +122,38 @@ internal static partial class WindowsIntegration
 	private static readonly System.Collections.Generic.Dictionary<IntPtr, IntPtr> _modalDialogWndProc = new ();
 	private static WndProcDelegate? _modalDialogProc;
 
+	// Owner-disable bookkeeping so a GTK-drawn modal dialog (Adw.MessageDialog,
+	// effect dialogs, etc.) makes its parent window inert like a real Win32 modal:
+	// dead title-bar buttons + system ding + a flash of the dialog when the parent
+	// is clicked. GTK's own modality is just a grab, which leaves the parent's
+	// native title bar live (its X does nothing, with no ding/flash). Refcounted
+	// per owner HWND for stacked dialogs; _dialogDisabledOwner records which owner
+	// each dialog disabled so it is re-enabled exactly once.
+	private static readonly System.Collections.Generic.Dictionary<IntPtr, int> _ownerDisableCount = new ();
+	private static readonly System.Collections.Generic.Dictionary<IntPtr, IntPtr> _dialogDisabledOwner = new ();
+
+	private static void DisableOwner (IntPtr owner)
+	{
+		if (owner == IntPtr.Zero) return;
+		int count = _ownerDisableCount.TryGetValue (owner, out int c) ? c : 0;
+		_ownerDisableCount[owner] = count + 1;
+		if (count == 0)
+			EnableWindow (owner, false);
+	}
+
+	private static void EnableOwner (IntPtr owner)
+	{
+		if (owner == IntPtr.Zero) return;
+		if (!_ownerDisableCount.TryGetValue (owner, out int count)) return;
+		count--;
+		if (count <= 0) {
+			_ownerDisableCount.Remove (owner);
+			EnableWindow (owner, true);
+		} else {
+			_ownerDisableCount[owner] = count;
+		}
+	}
+
 	/// <summary>
 	/// Applies the Windows-specific fixes a modal dialog needs: the dark native
 	/// title bar (so dialogs with a native frame, such as the effect-settings
@@ -162,15 +199,42 @@ internal static partial class WindowsIntegration
 		switch (msg) {
 		case WM_WINDOWPOSCHANGING:
 			// WINDOWPOS flags live at offset 32 on x64 (see SubclassWndProc).
-			if (lParam != IntPtr.Zero && (((uint) Marshal.ReadInt32 (lParam, 32)) & SWP_HIDEWINDOW) != 0) {
-				IntPtr owner = GetWindow (hWnd, GW_OWNER);
-				if (owner != IntPtr.Zero) {
-					BringWindowToTop (owner);
-					SetForegroundWindow (owner);
+			if (lParam != IntPtr.Zero) {
+				uint flags = (uint) Marshal.ReadInt32 (lParam, 32);
+
+				// On show, disable the owner so its native title bar is inert while
+				// the dialog is open (dead buttons + ding + flash, like a real modal).
+				if ((flags & SWP_SHOWWINDOW) != 0 && !_dialogDisabledOwner.ContainsKey (hWnd)) {
+					IntPtr owner = GetWindow (hWnd, GW_OWNER);
+					if (owner != IntPtr.Zero) {
+						_dialogDisabledOwner[hWnd] = owner;
+						DisableOwner (owner);
+					}
+				}
+
+				if ((flags & SWP_HIDEWINDOW) != 0) {
+					// Re-enable the owner first (a disabled window can't be brought
+					// to the foreground), then apply the z-order fix.
+					if (_dialogDisabledOwner.TryGetValue (hWnd, out IntPtr disabledOwner)) {
+						_dialogDisabledOwner.Remove (hWnd);
+						EnableOwner (disabledOwner);
+					}
+
+					IntPtr owner = GetWindow (hWnd, GW_OWNER);
+					if (owner != IntPtr.Zero) {
+						BringWindowToTop (owner);
+						SetForegroundWindow (owner);
+					}
 				}
 			}
 			break;
 		case WM_NCDESTROY:
+			// Safety net: re-enable the owner if the dialog is destroyed without a
+			// hide, so a missed enable can never leave the main window frozen.
+			if (_dialogDisabledOwner.TryGetValue (hWnd, out IntPtr ownerOnDestroy)) {
+				_dialogDisabledOwner.Remove (hWnd);
+				EnableOwner (ownerOnDestroy);
+			}
 			// Restore the original WndProc and drop our state before destruction.
 			SetWindowLongPtr (hWnd, GWLP_WNDPROC, original);
 			_modalDialogWndProc.Remove (hWnd);
