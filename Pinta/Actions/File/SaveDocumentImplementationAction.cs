@@ -36,6 +36,7 @@ internal sealed class SaveDocumentImplmentationAction : IActionHandler
 {
 	const string RESPONSE_CANCEL = "cancel";
 	const string RESPONSE_FLATTEN = "flatten";
+	const string RESPONSE_SAVE_AS = "saveas";
 
 	private readonly FileActions file;
 	private readonly ImageActions image;
@@ -95,17 +96,6 @@ internal sealed class SaveDocumentImplmentationAction : IActionHandler
 			Translations.GetString ("Save"),
 			Translations.GetString ("Cancel"));
 
-		if (document.HasFile)
-			fcd.SetFile (document.File!);
-		else {
-			if (recent_files.GetDialogDirectory () is Gio.File dir && dir.QueryExists (null))
-				fcd.SetCurrentFolder (dir);
-
-			// Append the default extension, producing e.g. "Unsaved Image 1.png"
-			string default_ext = image_formats.GetDefaultSaveFormat ().Extensions.First ();
-			fcd.SetCurrentName ($"{document.DisplayName}.{default_ext}");
-		}
-
 		// Add all the formats we support to the save dialog
 		Dictionary<Gtk.FileFilter, FormatDescriptor> filetypes = [];
 		foreach (var format in image_formats.Formats) {
@@ -121,16 +111,35 @@ internal sealed class SaveDocumentImplmentationAction : IActionHandler
 			fcd.Filter = format.Filter;
 		}
 
-		// If we already have a format, set it to the default.
-		// If not, default to jpeg
-		FormatDescriptor? format_desc = null;
+		// Determine which format's filter to pre-select, and suggest a matching filename.
+		FormatDescriptor? format_desc = document.HasFile
+			? image_formats.GetFormatByFile (document.DisplayName)
+			: null;
 
-		if (document.HasFile) {
-			format_desc = image_formats.GetFormatByFile (document.DisplayName);
-		}
-
-		if (format_desc is null || !format_desc.IsExportAvailable ())
+		if (document.HasFile && format_desc is not null && format_desc.IsExportAvailable ()) {
+			// The document's own format can be written: keep its existing name and extension.
+			fcd.SetFile (document.File!);
+		} else {
+			// Either an unsaved document or one whose format Pinta can't write (e.g. an
+			// imported .pdn). Fall back to a writable default and suggest a filename whose
+			// extension matches it, so the name and the selected type stay consistent.
 			format_desc = image_formats.GetDefaultSaveFormat ();
+			string default_ext = format_desc.Extensions.First ();
+
+			if (document.HasFile) {
+				if (document.File!.GetParent () is Gio.File parent)
+					fcd.SetCurrentFolder (parent);
+
+				string baseName = System.IO.Path.GetFileNameWithoutExtension (document.DisplayName);
+				fcd.SetCurrentName ($"{baseName}.{default_ext}");
+			} else {
+				if (recent_files.GetDialogDirectory () is Gio.File dir && dir.QueryExists (null))
+					fcd.SetCurrentFolder (dir);
+
+				// Append the default extension, producing e.g. "Unsaved Image 1.png"
+				fcd.SetCurrentName ($"{document.DisplayName}.{default_ext}");
+			}
+		}
 
 		fcd.Filter = format_desc.Filter;
 
@@ -145,6 +154,19 @@ internal sealed class SaveDocumentImplmentationAction : IActionHandler
 			// ie: if the user chooses to save a "jpeg" as "foo.png", we are going
 			// to assume they just didn't update the dropdown and really want png
 			FormatDescriptor? format = image_formats.GetFormatByFile (displayName);
+
+			if (format is not null && !format.IsExportAvailable ()) {
+				// The typed extension maps to a format Pinta can only open, not write
+				// (e.g. .pdn). Don't silently write a different format under this extension;
+				// keep the dialog open so the user can choose a writable name/type.
+				await chrome.ShowMessageDialog (
+					chrome.MainWindow,
+					UnsupportedFormatHeading (displayName),
+					Translations.GetString ("Pinta does not support saving images in this file format."));
+				fcd.SetCurrentName (displayName);
+				continue;
+			}
+
 			if (format is null) {
 				if (fcd.Filter is not null)
 					format = filetypes[fcd.Filter];
@@ -202,10 +224,22 @@ internal sealed class SaveDocumentImplmentationAction : IActionHandler
 
 		if (format is null || !format.IsExportAvailable ()) {
 
-			await chrome.ShowMessageDialog (
-				parent,
-				Translations.GetString ("Pinta does not support saving images in this file format."),
-				file.GetDisplayName ());
+			// This format can only be opened, not written (e.g. an imported .pdn).
+			// Offer to pick a writable format rather than dead-ending on "OK".
+			string heading = UnsupportedFormatHeading (file.GetDisplayName ());
+			string body = Translations.GetString ("Pinta does not support saving images in this file format.");
+
+			using Adw.MessageDialog dialog = Adw.MessageDialog.New (parent, heading, body);
+			dialog.AddResponse (RESPONSE_CANCEL, Translations.GetString ("_Cancel"));
+			dialog.AddResponse (RESPONSE_SAVE_AS, Translations.GetString ("Save _As…"));
+			dialog.SetResponseAppearance (RESPONSE_SAVE_AS, Adw.ResponseAppearance.Suggested);
+			dialog.CloseResponse = RESPONSE_CANCEL;
+			dialog.DefaultResponse = RESPONSE_SAVE_AS;
+
+			string response = await dialog.RunAsync ();
+
+			if (response == RESPONSE_SAVE_AS)
+				return await SaveFileAs (document);
 
 			return false;
 		}
@@ -258,6 +292,19 @@ internal sealed class SaveDocumentImplmentationAction : IActionHandler
 		document.HasBeenSavedInSession = true;
 
 		return true;
+	}
+
+	// Builds the heading for the "unsupported format" dialogs, leading with the file's
+	// extension so the format - the relevant detail - is the emphasized part.
+	private static string UnsupportedFormatHeading (string fileName)
+	{
+		string ext = System.IO.Path.GetExtension (fileName);
+
+		if (string.IsNullOrEmpty (ext))
+			return Translations.GetString ("Unsupported format");
+
+		// Translators: {0} is a file extension such as ".pdn".
+		return Translations.GetString ("Unsupported format: {0}", ext);
 	}
 
 	private async Task<bool> ConfirmFlatten (Document document, FormatDescriptor format)
