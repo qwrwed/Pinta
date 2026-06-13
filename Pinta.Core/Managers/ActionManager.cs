@@ -64,7 +64,7 @@ public sealed class ActionManager
 
 		// --- Action handlers that depend on other handlers
 
-		FileActions file = new (system, app, recentFiles, workspace);
+		FileActions file = new (system, app);
 		HelpActions help = new (system, app);
 		ImageActions image = new (tools, workspace, view);
 		LayerActions layers = new (chrome, imageFormats, recentFiles, tools, workspace, image);

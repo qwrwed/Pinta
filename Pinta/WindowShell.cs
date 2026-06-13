@@ -32,6 +32,7 @@ public sealed class WindowShell
 {
 	private readonly Gtk.ApplicationWindow app_window;
 	private readonly Adw.HeaderBar? header_bar;
+	private readonly Adw.ToolbarView app_layout;
 	private readonly Gtk.Box shell_layout;
 	private Gtk.Box? workspace_layout;
 	private Gtk.Box? main_toolbar;
@@ -45,7 +46,7 @@ public sealed class WindowShell
 		bool useMenuBar,
 		bool maximize)
 	{
-		var app_layout = Adw.ToolbarView.New ();
+		app_layout = Adw.ToolbarView.New ();
 
 		if (!useMenuBar) {
 			var adwWindow = Adw.ApplicationWindow.New (app);
@@ -59,7 +60,14 @@ public sealed class WindowShell
 			// to have a traditional titlebar with the standard close / minimize buttons,
 			// and a menubar in the window unless a global menu is used (e.g. macOS)
 			app_window = Gtk.ApplicationWindow.New (app);
-			app_window.ShowMenubar = true;
+
+			// On macOS the menu bar is shown via the global menu (Gtk.Application.Menubar).
+			// On other platforms (Windows) we host our own Gtk.PopoverMenuBar widget instead
+			// (added via AddTopBar in MainWindow), which - unlike GTK's auto-generated menu
+			// bar - lets us embed custom widgets such as the Open Recent thumbnail flyout.
+			if (SystemManager.GetOperatingSystem () == OS.Mac)
+				app_window.ShowMenubar = true;
+
 			app_window.SetChild (app_layout);
 		}
 
@@ -96,6 +104,11 @@ public sealed class WindowShell
 
 	public Gtk.ApplicationWindow Window => app_window;
 	public Adw.HeaderBar? HeaderBar => header_bar;
+
+	/// <summary>
+	/// Adds a bar (such as the menu bar) above the main window content.
+	/// </summary>
+	public void AddTopBar (Gtk.Widget bar) => app_layout.AddTopBar (bar);
 
 	public Gtk.Box CreateToolBar (string name)
 	{

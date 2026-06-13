@@ -10,3 +10,10 @@
 #canvas {
     box-shadow: 0px 0px 2px 2px #7F7F7F;
 }
+
+/* The Open Recent menu row and its thumbnail flyout use plain buttons/labels,
+   which render heavier than the menu items. Match the normal menu weight. */
+.pinta-recent-files,
+.pinta-recent-files label {
+    font-weight: normal;
+}

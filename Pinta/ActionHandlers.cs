@@ -53,6 +53,7 @@ public sealed class ActionHandlers
 			new NewDocumentAction (actions, chrome, palette, settings, workspace),
 			new NewScreenshotAction (system, chrome, workspace, actions),
 			new OpenDocumentAction (actions.File, chrome, workspace, recentFiles, imageFormats),
+			new OpenRecentAction (actions.File, chrome, workspace, recentFiles, imageFormats),
 			new SaveDocumentAction (actions.File, workspace),
 			new SaveDocumentAsAction (actions.File, workspace),
 			new SaveDocumentImplmentationAction (actions.File, actions.Image, chrome, imageFormats, recentFiles, tools),

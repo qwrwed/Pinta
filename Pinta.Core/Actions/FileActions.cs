@@ -43,14 +43,13 @@ public sealed class FileActions
 
 	public event EventHandler<ModifyCompressionEventArgs>? ModifyCompression;
 
-	private const string OpenRecentActionName = "open_recent";
-	private const string ClearRecentActionName = "clear_recent";
-
-	private readonly Gio.SimpleAction open_recent_action;
-	private readonly Gio.SimpleAction clear_recent_action;
-
-	// The section of the "Open Recent" submenu that holds the file entries (rebuilt on change).
-	private Gio.Menu recent_files_section = null!; // NRT - set in RegisterActions
+	/// <summary>
+	/// Id used to slot the custom "Open Recent" widget into the File menu via
+	/// <c>Gtk.PopoverMenuBar.AddChild</c> (filled in by OpenRecentAction). GTK4 menus
+	/// can't show images, and custom widgets are only supported at the top level of a
+	/// menu (not inside a submenu), so the recent-files flyout is a top-level custom item.
+	/// </summary>
+	public const string OpenRecentCustomWidgetId = "pinta-open-recent";
 
 	/// <remarks>
 	/// The returned value is
@@ -62,9 +61,7 @@ public sealed class FileActions
 
 	private readonly SystemManager system;
 	private readonly AppActions app;
-	private readonly RecentFileManager recent_files;
-	private readonly WorkspaceManager workspace;
-	public FileActions (SystemManager system, AppActions app, RecentFileManager recentFiles, WorkspaceManager workspace)
+	public FileActions (SystemManager system, AppActions app)
 	{
 		New = new Command (
 			"new",
@@ -122,16 +119,8 @@ public sealed class FileActions
 			null,
 			Resources.StandardIcons.DocumentPrint);
 
-		open_recent_action = Gio.SimpleAction.New (OpenRecentActionName, GtkExtensions.IntVariantType);
-		open_recent_action.OnActivate += (_, e) => OpenRecentFile (e.Parameter!.GetInt32 ());
-
-		clear_recent_action = Gio.SimpleAction.New (ClearRecentActionName, null);
-		clear_recent_action.OnActivate += (_, _) => recentFiles.ClearRecentFiles ();
-
 		this.system = system;
 		this.app = app;
-		recent_files = recentFiles;
-		this.workspace = workspace;
 	}
 
 	public void RegisterActions (Gtk.Application application, Gio.Menu menu)
@@ -147,20 +136,18 @@ public sealed class FileActions
 		close_section.AppendItem (Close.CreateMenuItem ());
 		if (!isMac) close_section.AppendItem (app.Exit.CreateMenuItem ()); // This is part of the application menu on macOS
 
-		// "Open Recent" submenu, with the file entries in one section and "Clear List" in another.
-		recent_files_section = Gio.Menu.New ();
-
-		Gio.Menu clear_recent_section = Gio.Menu.New ();
-		clear_recent_section.AppendItem (Gio.MenuItem.New (Translations.GetString ("Clear List"), $"app.{ClearRecentActionName}"));
-
-		Gio.Menu recent_menu = Gio.Menu.New ();
-		recent_menu.AppendSection (null, recent_files_section);
-		recent_menu.AppendSection (null, clear_recent_section);
+		// "Open Recent" is a custom widget (a row that opens a thumbnail flyout on hover),
+		// filled in by OpenRecentAction. It must be a top-level custom item, since GTK4 does
+		// not support custom widgets inside submenus.
+		Gio.Menu recent_section = Gio.Menu.New ();
+		Gio.MenuItem recent_custom = Gio.MenuItem.New (null, null);
+		recent_custom.SetAttributeValue ("custom", GLib.Variant.NewString (OpenRecentCustomWidgetId));
+		recent_section.AppendItem (recent_custom);
 
 		menu.AppendItem (New.CreateMenuItem ());
 		menu.AppendItem (NewScreenshot.CreateMenuItem ());
 		menu.AppendItem (Open.CreateMenuItem ());
-		menu.AppendSubmenu (Translations.GetString ("Open Recent"), recent_menu);
+		menu.AppendSection (null, recent_section);
 		menu.AppendSection (null, save_section);
 		menu.AppendSection (null, close_section);
 #if false
@@ -181,59 +168,9 @@ public sealed class FileActions
 
 		if (!isMac)
 			application.AddCommand (app.Exit); // This is part of the application menu on macOS
-
-		application.AddAction (open_recent_action);
-		application.AddAction (clear_recent_action);
-
-		recent_files.RecentFilesChanged += (_, _) => RebuildRecentFilesMenu ();
-		RebuildRecentFilesMenu ();
 	}
 
 	public void RegisterHandlers () { }
-
-	private void RebuildRecentFilesMenu ()
-	{
-		recent_files_section.RemoveAll ();
-
-		var recent = recent_files.RecentFiles;
-
-		if (recent.Length == 0) {
-			// A menu item with no action is shown disabled, matching paint.net's greyed-out entry.
-			recent_files_section.AppendItem (Gio.MenuItem.New (Translations.GetString ("(No recent files)"), null));
-			clear_recent_action.Enabled = false;
-			return;
-		}
-
-		for (int i = 0; i < recent.Length; ++i) {
-			string name = Gio.FileHelper.NewForUri (recent[i]).GetBasename () ?? recent[i];
-			// Double underscores so they aren't consumed as menu mnemonic markers.
-			string label = $"{i + 1} {name}".Replace ("_", "__");
-			recent_files_section.AppendItem (Gio.MenuItem.New (label, $"app.{OpenRecentActionName}({i})"));
-		}
-
-		clear_recent_action.Enabled = true;
-	}
-
-	private void OpenRecentFile (int index)
-	{
-		var recent = recent_files.RecentFiles;
-
-		if (index < 0 || index >= recent.Length)
-			return;
-
-		string uri = recent[index];
-		Gio.File file = Gio.FileHelper.NewForUri (uri);
-
-		if (workspace.OpenFile (file)) {
-			recent_files.AddFile (file);
-
-			if (file.GetParent () is Gio.File directory)
-				recent_files.LastDialogDirectory = directory;
-		} else {
-			// The file could not be opened (e.g. it was moved or deleted), so drop it from the list.
-			recent_files.RemoveFile (uri);
-		}
-	}
 
 	/// <returns>
 	/// <see langword="true"/> if the save succeeded,

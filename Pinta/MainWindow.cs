@@ -348,6 +348,13 @@ internal sealed class MainWindow
 			useMenuBar: IsUsingMenuBar (),
 			maximize);
 
+		// On non-macOS menu-bar mode, host our own menu bar widget so custom widgets
+		// (e.g. the Open Recent thumbnail flyout) can be embedded via PopoverMenuBar.AddChild.
+		if (IsUsingMenuBar () && PintaCore.System.OperatingSystem != OS.Mac) {
+			Gtk.PopoverMenuBar bar = Gtk.PopoverMenuBar.NewFromModel (menu_bar);
+			window_shell.AddTopBar (bar);
+		}
+
 		CreateMainToolBar ();
 		CreateToolToolBar ();
 
@@ -412,7 +419,10 @@ internal sealed class MainWindow
 
 		// --- Global initializations
 
-		if (usingMenuBar)
+		// On macOS the menu bar is shown via the global menu. On other platforms we host our
+		// own Gtk.PopoverMenuBar widget (created in CreateWindow) so custom widgets can be
+		// embedded in menus (e.g. the Open Recent thumbnail flyout).
+		if (isMac)
 			app.Menubar = menuBar;
 
 		if (isMac) {
