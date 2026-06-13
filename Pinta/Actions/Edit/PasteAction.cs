@@ -214,23 +214,23 @@ internal sealed class PasteAction : IActionHandler
 		string primary = Translations.GetString ("Image larger than canvas");
 		string secondary = Translations.GetString ("The image being pasted is larger than the canvas. What would you like to do to the canvas size?");
 
-		using Adw.MessageDialog dialog = Adw.MessageDialog.New (chrome.MainWindow, primary, secondary);
+		const int cancel_response = (int) Gtk.ResponseType.Cancel;
+		const int reject_response = 1;
+		const int expand_response = 2;
 
-		const string cancel_response = "cancel";
-		const string reject_response = "reject";
-		const string expand_response = "expand";
-
-		dialog.AddResponse (cancel_response, Translations.GetString ("_Cancel"));
-		// Translators: This refers to preserving the current canvas size when pasting a larger image.
-		dialog.AddResponse (reject_response, Translations.GetString ("Preserve"));
-		// Translators: This refers to expanding the canvas size when pasting a larger image.
-		dialog.AddResponse (expand_response, Translations.GetString ("Expand"));
-
-		dialog.SetResponseAppearance (expand_response, Adw.ResponseAppearance.Suggested);
-		dialog.CloseResponse = cancel_response;
-		dialog.DefaultResponse = expand_response;
-
-		string response = await dialog.RunAsync ();
+		int response = await GtkExtensions.ShowMessageDialogAsync (
+			chrome.MainWindow,
+			primary,
+			null,
+			secondary,
+			[
+				(Translations.GetString ("_Cancel"), cancel_response, GtkExtensions.DialogButtonStyle.Normal),
+				// Translators: This refers to preserving the current canvas size when pasting a larger image.
+				(Translations.GetString ("Preserve"), reject_response, GtkExtensions.DialogButtonStyle.Normal),
+				// Translators: This refers to expanding the canvas size when pasting a larger image.
+				(Translations.GetString ("Expand"), expand_response, GtkExtensions.DialogButtonStyle.Suggested),
+			],
+			defaultResponse: expand_response);
 
 		return response switch {
 			expand_response => Gtk.ResponseType.Accept,

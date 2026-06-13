@@ -39,13 +39,13 @@ internal static class ErrorDialog
 	{
 		Console.Error.WriteLine ("Pinta: {0}\n{1}", message, body);
 
-		using Adw.MessageDialog dialog = Adw.MessageDialog.New (parent, message, body);
-
-		dialog.AddResponse (nameof (ErrorDialogResponse.OK), Translations.GetString ("_OK"));
-		dialog.DefaultResponse = nameof (ErrorDialogResponse.OK);
-		dialog.CloseResponse = nameof (ErrorDialogResponse.OK);
-
-		await dialog.RunAsync ();
+		await GtkExtensions.ShowMessageDialogAsync (
+			parent,
+			message,
+			null,
+			body,
+			[(Translations.GetString ("_OK"), (int) Gtk.ResponseType.Ok, GtkExtensions.DialogButtonStyle.Normal)],
+			defaultResponse: (int) Gtk.ResponseType.Ok);
 	}
 
 	internal static async Task<ErrorDialogResponse> ShowError (
@@ -56,26 +56,31 @@ internal static class ErrorDialog
 	{
 		Console.Error.WriteLine ("Pinta: {0}\n{1}", message, details);
 
-		using Gtk.TextView text_view = Gtk.TextView.New ();
+		Gtk.TextView text_view = Gtk.TextView.New ();
 		text_view.Buffer!.SetText (details, -1);
 
-		using Gtk.ScrolledWindow scroll = Gtk.ScrolledWindow.New ();
+		Gtk.ScrolledWindow scroll = Gtk.ScrolledWindow.New ();
 		scroll.HeightRequest = 250;
 		scroll.SetChild (text_view);
 
-		using Gtk.Expander expander = Gtk.Expander.New (Translations.GetString ("Details"));
+		Gtk.Expander expander = Gtk.Expander.New (Translations.GetString ("Details"));
 		expander.SetChild (scroll);
 
-		using Adw.MessageDialog dialog = Adw.MessageDialog.New (parent, message, body);
-		dialog.SetExtraChild (expander);
-		dialog.AddResponse (nameof (ErrorDialogResponse.Bug), Translations.GetString ("Report Bug..."));
-		dialog.SetResponseAppearance (nameof (ErrorDialogResponse.Bug), Adw.ResponseAppearance.Suggested);
-		dialog.AddResponse (nameof (ErrorDialogResponse.OK), Translations.GetString ("_OK"));
-		dialog.DefaultResponse = nameof (ErrorDialogResponse.OK);
-		dialog.CloseResponse = nameof (ErrorDialogResponse.OK);
+		const int bug = 1;
+		const int ok = (int) Gtk.ResponseType.Ok;
 
-		string responseText = await dialog.RunAsync ();
+		int response = await GtkExtensions.ShowMessageDialogAsync (
+			parent,
+			message,
+			null,
+			body,
+			[
+				(Translations.GetString ("Report Bug..."), bug, GtkExtensions.DialogButtonStyle.Suggested),
+				(Translations.GetString ("_OK"), ok, GtkExtensions.DialogButtonStyle.Normal),
+			],
+			defaultResponse: ok,
+			extraChild: expander);
 
-		return Enum.Parse<ErrorDialogResponse> (responseText);
+		return response == bug ? ErrorDialogResponse.Bug : ErrorDialogResponse.OK;
 	}
 }

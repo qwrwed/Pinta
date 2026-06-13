@@ -34,10 +34,6 @@ namespace Pinta.Actions;
 
 internal sealed class SaveDocumentImplmentationAction : IActionHandler
 {
-	const string RESPONSE_CANCEL = "cancel";
-	const string RESPONSE_FLATTEN = "flatten";
-	const string RESPONSE_SAVE_AS = "saveas";
-
 	private readonly FileActions file;
 	private readonly ImageActions image;
 	private readonly ChromeManager chrome;
@@ -228,16 +224,21 @@ internal sealed class SaveDocumentImplmentationAction : IActionHandler
 			string heading = UnsupportedFormatHeading (file.GetDisplayName ());
 			string body = Translations.GetString ("Pinta does not support saving images in this file format.");
 
-			using Adw.MessageDialog dialog = Adw.MessageDialog.New (parent, heading, body);
-			dialog.AddResponse (RESPONSE_CANCEL, Translations.GetString ("_Cancel"));
-			dialog.AddResponse (RESPONSE_SAVE_AS, Translations.GetString ("Save _As…"));
-			dialog.SetResponseAppearance (RESPONSE_SAVE_AS, Adw.ResponseAppearance.Suggested);
-			dialog.CloseResponse = RESPONSE_CANCEL;
-			dialog.DefaultResponse = RESPONSE_SAVE_AS;
+			const int cancel = (int) Gtk.ResponseType.Cancel;
+			const int save_as = 1;
 
-			string response = await dialog.RunAsync ();
+			int response = await GtkExtensions.ShowMessageDialogAsync (
+				parent,
+				heading, // the heading ("Unsupported format: .pdn") is already short - use it as the title
+				null,
+				body,
+				[
+					(Translations.GetString ("_Cancel"), cancel, GtkExtensions.DialogButtonStyle.Normal),
+					(Translations.GetString ("Save _As…"), save_as, GtkExtensions.DialogButtonStyle.Suggested),
+				],
+				defaultResponse: save_as);
 
-			if (response == RESPONSE_SAVE_AS)
+			if (response == save_as)
 				return await SaveFileAs (document);
 
 			return false;
@@ -315,17 +316,21 @@ internal sealed class SaveDocumentImplmentationAction : IActionHandler
 			string heading = Translations.GetString ("This format does not support layers. Flatten image?");
 			string body = Translations.GetString ("Flattening the image will merge all layers into a single layer.");
 
-			using Adw.MessageDialog dialog = Adw.MessageDialog.New (chrome.MainWindow, heading, body);
-			dialog.AddResponse (RESPONSE_CANCEL, Translations.GetString ("_Cancel"));
-			dialog.AddResponse (RESPONSE_FLATTEN, Translations.GetString ("Flatten"));
-			dialog.SetResponseAppearance (RESPONSE_FLATTEN, Adw.ResponseAppearance.Suggested);
+			const int cancel = (int) Gtk.ResponseType.Cancel;
+			const int flatten = 1;
 
-			dialog.CloseResponse = RESPONSE_CANCEL;
-			dialog.DefaultResponse = RESPONSE_FLATTEN;
+			int response = await GtkExtensions.ShowMessageDialogAsync (
+				chrome.MainWindow,
+				Translations.GetString ("Flatten Image?"),
+				heading,
+				body,
+				[
+					(Translations.GetString ("_Cancel"), cancel, GtkExtensions.DialogButtonStyle.Normal),
+					(Translations.GetString ("Flatten"), flatten, GtkExtensions.DialogButtonStyle.Suggested),
+				],
+				defaultResponse: flatten);
 
-			string response = await dialog.RunAsync ();
-
-			if (response == RESPONSE_CANCEL) {
+			if (response == cancel) {
 				return false;
 			}
 

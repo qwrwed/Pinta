@@ -74,24 +74,22 @@ internal sealed class CloseDocumentAction : IActionHandler
 
 		string body = Translations.GetString ("If you don't save, all changes will be permanently lost.");
 
-		Adw.MessageDialog dialog = Adw.MessageDialog.New (chrome.MainWindow, heading, body);
+		const int cancel_response = (int) Gtk.ResponseType.Cancel;
+		const int discard_response = 1;
+		const int save_response = 2;
 
-		const string cancel_response = "cancel";
-		const string discard_response = "discard";
-		const string save_response = "save";
+		int response = await GtkExtensions.ShowMessageDialogAsync (
+			chrome.MainWindow,
+			Translations.GetString ("Unsaved Changes"),
+			heading,
+			body,
+			[
+				(Translations.GetString ("_Cancel"), cancel_response, GtkExtensions.DialogButtonStyle.Normal),
+				(Translations.GetString ("_Discard"), discard_response, GtkExtensions.DialogButtonStyle.Destructive),
+				(Translations.GetString ("_Save"), save_response, GtkExtensions.DialogButtonStyle.Suggested),
+			],
+			defaultResponse: save_response);
 
-		dialog.AddResponse (cancel_response, Translations.GetString ("_Cancel"));
-		dialog.AddResponse (discard_response, Translations.GetString ("_Discard"));
-		dialog.AddResponse (save_response, Translations.GetString ("_Save"));
-
-		// Configure the styling for the save / discard buttons.
-		dialog.SetResponseAppearance (discard_response, Adw.ResponseAppearance.Destructive);
-		dialog.SetResponseAppearance (save_response, Adw.ResponseAppearance.Suggested);
-
-		dialog.CloseResponse = cancel_response;
-		dialog.DefaultResponse = save_response;
-
-		string response = dialog.RunBlocking ();
 		if (response == save_response) {
 
 			bool saved = await workspace.ActiveDocument.Save (false);

@@ -194,18 +194,13 @@ internal sealed class InstallDialog : Adw.Window
 			return true;
 
 		} catch {
-			var dialog = Adw.MessageDialog.New (
+			_ = GtkExtensions.ShowMessageDialogAsync (
 				TransientFor,
 				Translations.GetString ("Failed to load extension package"),
-				Translations.GetString ("The file may be an invalid or corrupt extension package"));
-
-			const string ok_response = "ok";
-
-			dialog.AddResponse (ok_response, Translations.GetString ("_OK"));
-			dialog.DefaultResponse = ok_response;
-			dialog.CloseResponse = ok_response;
-
-			dialog.Present ();
+				null,
+				Translations.GetString ("The file may be an invalid or corrupt extension package"),
+				[(Translations.GetString ("_OK"), (int) Gtk.ResponseType.Ok, GtkExtensions.DialogButtonStyle.Normal)],
+				defaultResponse: (int) Gtk.ResponseType.Ok);
 
 			return false;
 		}

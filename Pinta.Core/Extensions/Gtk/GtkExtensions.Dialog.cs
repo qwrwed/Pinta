@@ -42,6 +42,68 @@ partial class GtkExtensions
 	/// </summary>
 	public static Action<Gtk.Window>? PlatformPrepareModalDialog { get; set; }
 
+	public enum DialogButtonStyle { Normal, Suggested, Destructive }
+
+	/// <summary>
+	/// Shows a modal message/confirmation dialog built on <see cref="Gtk.Dialog"/>
+	/// (rather than <see cref="Adw.MessageDialog"/>, which is always client-side
+	/// decorated). On Windows this gives the native Win32 title bar and the standard
+	/// modal behaviour (disabled parent + ding + title-bar flash), matching Pinta's
+	/// other dialogs. <paramref name="title"/> is the (short) title-bar text;
+	/// <paramref name="heading"/> is an optional bold line in the body; the chosen
+	/// button's response id is returned.
+	/// </summary>
+	public static async Task<int> ShowMessageDialogAsync (
+		Gtk.Window? parent,
+		string title,
+		string? heading,
+		string body,
+		(string Label, int Response, DialogButtonStyle Style)[] buttons,
+		int defaultResponse,
+		Gtk.Widget? extraChild = null)
+	{
+		Gtk.Dialog dialog = Gtk.Dialog.New ();
+		dialog.TransientFor = parent;
+		dialog.Modal = true;
+		dialog.Title = title;
+
+		Gtk.Box content = dialog.GetContentAreaBox ();
+		content.Spacing = 6;
+		content.SetAllMargins (12);
+
+		if (!string.IsNullOrEmpty (heading)) {
+			Gtk.Label heading_label = Gtk.Label.New (heading);
+			heading_label.Wrap = true;
+			heading_label.Xalign = 0;
+			heading_label.AddCssClass ("title-4");
+			content.Append (heading_label);
+		}
+
+		if (!string.IsNullOrEmpty (body)) {
+			Gtk.Label body_label = Gtk.Label.New (body);
+			body_label.Wrap = true;
+			body_label.Xalign = 0;
+			content.Append (body_label);
+		}
+
+		if (extraChild is not null)
+			content.Append (extraChild);
+
+		foreach (var (label, response, style) in buttons) {
+			Gtk.Widget button = dialog.AddButton (label, response);
+			if (style == DialogButtonStyle.Suggested)
+				button.AddCssClass ("suggested-action");
+			else if (style == DialogButtonStyle.Destructive)
+				button.AddCssClass ("destructive-action");
+		}
+
+		dialog.SetDefaultResponse ((Gtk.ResponseType) defaultResponse);
+
+		int result = (int) await dialog.RunAsync ();
+		dialog.Destroy ();
+		return result;
+	}
+
 	public static async Task<Gio.File?> OpenFileAsync (
 		this Gtk.FileDialog fileDialog,
 		Gtk.Window parent)
@@ -97,32 +159,6 @@ partial class GtkExtensions
 			result[i] = (Gio.FileHelper) GObject.Internal.InstanceWrapper.WrapHandle<Gio.FileHelper> (g_ref, ownedRef: true);
 		}
 		return result;
-	}
-
-	/// <summary>
-	/// Similar to gtk_dialog_run() in GTK3, this runs the dialog in a blocking manner with a nested event loop.
-	/// This can be useful for compatibility with old code that relies on this behaviour, but new code should be
-	/// structured to use event handlers.
-	/// </summary>
-	public static string RunBlocking (this Adw.MessageDialog dialog)
-	{
-		string response = "";
-		var loop = GLib.MainLoop.New (null, false);
-
-		if (!dialog.Modal)
-			dialog.Modal = true;
-
-		dialog.OnResponse += (_, args) => {
-			response = args.Response;
-			if (loop.IsRunning ())
-				loop.Quit ();
-		};
-
-		PlatformPrepareModalDialog?.Invoke (dialog);
-		dialog.Show ();
-		loop.Run ();
-
-		return response;
 	}
 
 	/// <summary>
@@ -192,26 +228,6 @@ partial class GtkExtensions
 
 		dialog.OnResponse += ResponseCallback;
 		dialog.Show ();
-
-		return completionSource.Task;
-	}
-
-	// TODO-GTK4 (bindings) - replace with adw_message_dialog_choose() once adwaita 1.3 is available, like in v0.4 of gir.core
-	public static Task<string> RunAsync (this Adw.MessageDialog dialog)
-	{
-		TaskCompletionSource<string> completionSource = new ();
-
-		void ResponseCallback (
-			Adw.MessageDialog sender,
-			Adw.MessageDialog.ResponseSignalArgs args)
-		{
-			completionSource.SetResult (args.Response);
-			dialog.OnResponse -= ResponseCallback;
-		}
-
-		dialog.OnResponse += ResponseCallback;
-		PlatformPrepareModalDialog?.Invoke (dialog);
-		dialog.Present ();
 
 		return completionSource.Task;
 	}
