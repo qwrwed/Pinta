@@ -24,6 +24,7 @@
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 // THE SOFTWARE.
 
+using System;
 using System.Collections.Generic;
 using System.Threading.Tasks;
 
@@ -31,6 +32,15 @@ namespace Pinta.Core;
 
 partial class GtkExtensions
 {
+	/// <summary>
+	/// Platform hook invoked with a modal dialog when it is shown, to apply any
+	/// platform-specific fixes. Set on Windows (see Main.cs) to correct a z-order
+	/// glitch where dismissing the dialog, after the app was deactivated and
+	/// reactivated (alt-tabbing away and back), drops the parent window behind
+	/// another application's window. Null (no-op) on other platforms.
+	/// </summary>
+	public static Action<Gtk.Window>? PlatformPrepareModalDialog { get; set; }
+
 	public static async Task<Gio.File?> OpenFileAsync (
 		this Gtk.FileDialog fileDialog,
 		Gtk.Window parent)
@@ -93,6 +103,7 @@ partial class GtkExtensions
 				loop.Quit ();
 		};
 
+		PlatformPrepareModalDialog?.Invoke (dialog);
 		dialog.Show ();
 		loop.Run ();
 
@@ -145,6 +156,7 @@ partial class GtkExtensions
 				loop.Quit ();
 		};
 
+		PlatformPrepareModalDialog?.Invoke (dialog);
 		dialog.Show ();
 		loop.Run ();
 

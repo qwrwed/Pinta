@@ -123,6 +123,13 @@ internal sealed class MainClass
 			RegisterForAppleEvents ();
 		}
 
+		if (SystemManager.GetOperatingSystem () == OS.Windows) {
+			// Correct the modal-dialog z-order glitch (dismissing a dialog after
+			// alt-tabbing away and back dropped the main window behind another
+			// app); see GtkExtensions.PlatformPrepareModalDialog.
+			GtkExtensions.PlatformPrepareModalDialog = WinInterop.WindowsIntegration.FixModalDialogZOrder;
+		}
+
 		if (threads > 0)
 			PintaCore.System.RenderThreads = threads;
 

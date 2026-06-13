@@ -27,6 +27,7 @@ internal static partial class WindowsIntegration
 	private const uint SC_RESTORE = 0xF120;
 	private const uint SC_MINIMIZE = 0xF020;
 	private const uint SWP_NOSIZE = 0x0001;
+	private const uint SWP_HIDEWINDOW = 0x0080;
 
 	[LibraryImport ("user32.dll")]
 	private static partial IntPtr GetAncestor (IntPtr hWnd, uint gaFlags);
@@ -52,6 +53,20 @@ internal static partial class WindowsIntegration
 	[LibraryImport ("user32.dll")]
 	[return: MarshalAs (UnmanagedType.Bool)]
 	private static partial bool IsZoomed (IntPtr hWnd);
+
+	[LibraryImport ("user32.dll")]
+	[return: MarshalAs (UnmanagedType.Bool)]
+	private static partial bool SetForegroundWindow (IntPtr hWnd);
+
+	[LibraryImport ("user32.dll")]
+	[return: MarshalAs (UnmanagedType.Bool)]
+	private static partial bool BringWindowToTop (IntPtr hWnd);
+
+	[LibraryImport ("user32.dll")]
+	private static partial IntPtr GetWindow (IntPtr hWnd, uint uCmd);
+
+	// GetWindow command: the window's owner.
+	private const uint GW_OWNER = 4;
 
 	[LibraryImport ("user32.dll")]
 	[return: MarshalAs (UnmanagedType.Bool)]
@@ -84,7 +99,7 @@ internal static partial class WindowsIntegration
 	}
 
 	// Returns the native top-level HWND for a realized window, or Zero.
-	private static IntPtr GetRootHwnd (Gtk.ApplicationWindow window)
+	private static IntPtr GetRootHwnd (Gtk.Window window)
 	{
 		IntPtr surface = GtkNativeGetSurface (window.Handle.DangerousGetHandle ());
 		if (surface == IntPtr.Zero) return IntPtr.Zero;
@@ -94,6 +109,63 @@ internal static partial class WindowsIntegration
 
 		IntPtr root = GetAncestor (hwnd, GA_ROOT);
 		return root != IntPtr.Zero ? root : hwnd;
+	}
+
+	// Subclass state for the modal-dialog z-order fix. Keyed by HWND; the
+	// delegate is rooted in a static field so the GC can't collect it while
+	// Windows still holds the function pointer.
+	private static readonly System.Collections.Generic.Dictionary<IntPtr, IntPtr> _modalDialogWndProc = new ();
+	private static WndProcDelegate? _modalDialogProc;
+
+	/// <summary>
+	/// Fixes a z-order glitch where dismissing a modal dialog, after the app was
+	/// deactivated and reactivated (alt-tabbing away and back), drops the main
+	/// window behind another application's window. GTK hides the dialog before
+	/// destroying it, and on hide Windows activates the next top-level window in
+	/// the global z-order - which after an alt-tab can be another app rather than
+	/// the dialog's owner (verified: the owned-window-activates-owner rule never
+	/// applies because the dialog is no longer foreground by destroy time). This
+	/// subclasses the dialog and, the instant it is hidden (while it still holds
+	/// the foreground), activates its owner so the owner stays foreground.
+	/// </summary>
+	public static void FixModalDialogZOrder (Gtk.Window dialog)
+	{
+		dialog.OnRealize += (_, _) => {
+			IntPtr hwnd = GetRootHwnd (dialog);
+			if (hwnd == IntPtr.Zero) return;
+			if (_modalDialogWndProc.ContainsKey (hwnd)) return;
+
+			_modalDialogProc ??= ModalDialogWndProc;
+			IntPtr proc = Marshal.GetFunctionPointerForDelegate (_modalDialogProc);
+			IntPtr original = SetWindowLongPtr (hwnd, GWLP_WNDPROC, proc);
+			_modalDialogWndProc[hwnd] = original;
+		};
+	}
+
+	private static IntPtr ModalDialogWndProc (IntPtr hWnd, uint msg, IntPtr wParam, IntPtr lParam)
+	{
+		if (!_modalDialogWndProc.TryGetValue (hWnd, out IntPtr original))
+			return IntPtr.Zero;
+
+		switch (msg) {
+		case WM_WINDOWPOSCHANGING:
+			// WINDOWPOS flags live at offset 32 on x64 (see SubclassWndProc).
+			if (lParam != IntPtr.Zero && (((uint) Marshal.ReadInt32 (lParam, 32)) & SWP_HIDEWINDOW) != 0) {
+				IntPtr owner = GetWindow (hWnd, GW_OWNER);
+				if (owner != IntPtr.Zero) {
+					BringWindowToTop (owner);
+					SetForegroundWindow (owner);
+				}
+			}
+			break;
+		case WM_NCDESTROY:
+			// Restore the original WndProc and drop our state before destruction.
+			SetWindowLongPtr (hWnd, GWLP_WNDPROC, original);
+			_modalDialogWndProc.Remove (hWnd);
+			return CallWindowProc (original, hWnd, msg, wParam, lParam);
+		}
+
+		return CallWindowProc (original, hWnd, msg, wParam, lParam);
 	}
 
 	/// <summary>
