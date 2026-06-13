@@ -339,6 +339,11 @@ public sealed class WorkspaceManager : IWorkspaceService
 				}
 			}
 
+			// Default to the top layer (as other image editors do) rather than the
+			// bottom layer, which would otherwise be selected simply because it was
+			// the first one inserted during loading.
+			ActiveDocument.Layers.SetCurrentUserLayer (ActiveDocument.Layers.Count () - 1);
+
 			ActiveWorkspace.History.PushNewItem (new BaseHistoryItem (Resources.StandardIcons.DocumentOpen, Translations.GetString ("Open Image")));
 			ActiveDocument.History.SetClean ();
 
