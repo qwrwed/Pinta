@@ -118,6 +118,18 @@ internal static partial class WindowsIntegration
 	private static WndProcDelegate? _modalDialogProc;
 
 	/// <summary>
+	/// Applies the Windows-specific fixes a modal dialog needs: the dark native
+	/// title bar (so dialogs with a native frame, such as the effect-settings
+	/// Gtk.Dialog, match Pinta's dark UI instead of defaulting to light) and the
+	/// z-order fix below.
+	/// </summary>
+	public static void PrepareModalDialog (Gtk.Window dialog)
+	{
+		ApplyDarkTitleBar (dialog);
+		FixModalDialogZOrder (dialog);
+	}
+
+	/// <summary>
 	/// Fixes a z-order glitch where dismissing a modal dialog, after the app was
 	/// deactivated and reactivated (alt-tabbing away and back), drops the main
 	/// window behind another application's window. GTK hides the dialog before
@@ -128,7 +140,7 @@ internal static partial class WindowsIntegration
 	/// subclasses the dialog and, the instant it is hidden (while it still holds
 	/// the foreground), activates its owner so the owner stays foreground.
 	/// </summary>
-	public static void FixModalDialogZOrder (Gtk.Window dialog)
+	private static void FixModalDialogZOrder (Gtk.Window dialog)
 	{
 		dialog.OnRealize += (_, _) => {
 			IntPtr hwnd = GetRootHwnd (dialog);
@@ -171,7 +183,7 @@ internal static partial class WindowsIntegration
 	/// <summary>
 	/// Applies a dark native title bar to the window once it is realized.
 	/// </summary>
-	public static void ApplyDarkTitleBar (Gtk.ApplicationWindow window)
+	public static void ApplyDarkTitleBar (Gtk.Window window)
 	{
 		window.OnRealize += (_, _) => {
 			IntPtr hwnd = GetRootHwnd (window);

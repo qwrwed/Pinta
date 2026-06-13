@@ -34,10 +34,11 @@ partial class GtkExtensions
 {
 	/// <summary>
 	/// Platform hook invoked with a modal dialog when it is shown, to apply any
-	/// platform-specific fixes. Set on Windows (see Main.cs) to correct a z-order
-	/// glitch where dismissing the dialog, after the app was deactivated and
-	/// reactivated (alt-tabbing away and back), drops the parent window behind
-	/// another application's window. Null (no-op) on other platforms.
+	/// platform-specific fixes. Set on Windows (see Main.cs) to apply the dark
+	/// native title bar and to correct a z-order glitch where dismissing the
+	/// dialog, after the app was deactivated and reactivated (alt-tabbing away
+	/// and back), drops the parent window behind another application's window.
+	/// Null (no-op) on other platforms.
 	/// </summary>
 	public static Action<Gtk.Window>? PlatformPrepareModalDialog { get; set; }
 
@@ -195,6 +196,7 @@ partial class GtkExtensions
 		}
 
 		dialog.OnResponse += ResponseCallback;
+		PlatformPrepareModalDialog?.Invoke (dialog);
 		dialog.Present ();
 
 		return completionSource.Task;
@@ -213,6 +215,7 @@ partial class GtkExtensions
 		}
 
 		dialog.OnResponse += ResponseCallback;
+		PlatformPrepareModalDialog?.Invoke (dialog);
 		dialog.Present ();
 
 		return completionSource.Task;

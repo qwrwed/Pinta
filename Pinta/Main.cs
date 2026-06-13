@@ -124,10 +124,10 @@ internal sealed class MainClass
 		}
 
 		if (SystemManager.GetOperatingSystem () == OS.Windows) {
-			// Correct the modal-dialog z-order glitch (dismissing a dialog after
-			// alt-tabbing away and back dropped the main window behind another
-			// app); see GtkExtensions.PlatformPrepareModalDialog.
-			GtkExtensions.PlatformPrepareModalDialog = WinInterop.WindowsIntegration.FixModalDialogZOrder;
+			// Apply Windows-specific modal dialog fixes (dark native title bar +
+			// z-order glitch on dismiss after alt-tabbing away and back); see
+			// GtkExtensions.PlatformPrepareModalDialog.
+			GtkExtensions.PlatformPrepareModalDialog = WinInterop.WindowsIntegration.PrepareModalDialog;
 		}
 
 		if (threads > 0)
