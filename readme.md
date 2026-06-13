@@ -1,13 +1,7 @@
 
 # Pinta - [Simple Gtk# Paint Program](http://pinta-project.com/)
 
-<a href='https://flathub.org/apps/com.github.PintaProject.Pinta'><img width='200' alt='Get it on Flathub' src='https://flathub.org/api/badge?locale=en'/></a>
-[![Get it from the Snap Store](https://snapcraft.io/static/images/badges/en/snap-store-black.svg)](https://snapcraft.io/pinta)
-
-[![Translation status](https://hosted.weblate.org/widget/pinta/pinta/287x66-grey.png)](https://hosted.weblate.org/engage/pinta/)
-[![Build Status](https://github.com/PintaProject/Pinta/workflows/Build/badge.svg)](https://github.com/PintaProject/Pinta/actions)
-
-Copyright (C) 2010 Jonathan Pobst <monkey AT jpobst DOT com>
+This is a fork of [PintaProject/Pinta](https://github.com/PintaProject/Pinta) with some added features and Windows-specific fixes. See [Differences from upstream](#differences-from-upstream) below.
 
 Pinta is a GTK clone of [Paint.Net 3.0](http://www.getpaint.net/), with support for Linux, Windows, and macOS.
 
@@ -19,6 +13,19 @@ original headers on source files.
 
 See `license-pdn.txt` for Paint.Net's original license.
 
+## Differences from upstream
+
+This fork adds the following on top of upstream Pinta:
+
+- **Non-destructive `File > Export As...` (Ctrl+E)** - exports the active document to any supported format without touching the document's file/dirty state, recent files, or flattening the working layers. Long-requested on the Paint.NET forums: [110653](https://forums.getpaint.net/topic/110653-save-as-should-not-force-me-to-flatten-my-image/), [124416](https://forums.getpaint.net/topic/124416-feature-request-export-png-without-having-to-flatten-layers/), [119152](https://forums.getpaint.net/topic/119152-is-there-anyway-to-save-a-png-without-flattening/), [121384](https://forums.getpaint.net/topic/121384-export-as-png-without-save-as/), [113986](https://forums.getpaint.net/topic/113986-request-change-save-as-behaviour/).
+- **Native Windows title bar** - uses the native Win32 title bar instead of GTK4/libadwaita client-side decorations:
+  - Native min/max/close buttons, Aero Snap, and edge resize.
+  - Correct HiDPI scaling on fractional-scaled displays.
+  - Fixes the related window-stability bugs this introduces: staying maximized correctly on launch (without getting stuck at monitor size), avoiding the GTK4/DPI layout bug, and keeping a maximized window stable when opening menu-bar popovers.
+  - Addresses upstream issues [#1528](https://github.com/PintaProject/Pinta/issues/1528), [#1465](https://github.com/PintaProject/Pinta/issues/1465), [#964](https://github.com/PintaProject/Pinta/issues/964), [#1999](https://github.com/PintaProject/Pinta/issues/1999) and [#1365](https://github.com/PintaProject/Pinta/issues/1365) (HiDPI).
+- **Tool order matching Paint.NET** - the toolbox is reordered to match the Paint.NET layout. Addresses upstream issues [#1219](https://github.com/PintaProject/Pinta/issues/1219) and [#2127](https://github.com/PintaProject/Pinta/issues/2127).
+- **Cursor/stroke offset fix** - corrects the cursor and stroke position when the window is smaller than the canvas. Addresses upstream issue [#2165](https://github.com/PintaProject/Pinta/issues/2165).
+- **Windows dev install + release tooling** - `install-windows-dev.ps1` builds a self-contained app and installs over a system Pinta (preserving user-added files like addin DLLs), and CI publishes a Windows installer to GitHub Releases on tag.
 
 ## Icons are from:
 
@@ -92,8 +99,3 @@ Follow the instructions of the corresponding [pinta-virtual-dev-environment](htt
 - You can get help in #pinta on irc.gnome.org.
 - For details on notable changes of each release, take a look at the [CHANGELOG](https://github.com/PintaProject/Pinta/blob/master/CHANGELOG.md).
 - For details on patching, take a look at `patch-guidelines.md` in the repo.
-
-## Code signing policy
-- Free code signing on Windows provided by [SignPath.io](https://about.signpath.io/), certificate by [SignPath Foundation](https://signpath.org/).
-- Committers and approvers: [Pinta Maintainers](https://github.com/orgs/PintaProject/people)
-- Privacy policy: this program will not transfer any information to other networked systems unless specifically requested by the user or the person installing or operating it.
