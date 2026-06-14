@@ -70,8 +70,130 @@ internal static partial class WindowsIntegration
 	[return: MarshalAs (UnmanagedType.Bool)]
 	private static partial bool EnableWindow (IntPtr hWnd, [MarshalAs (UnmanagedType.Bool)] bool bEnable);
 
+	[LibraryImport ("user32.dll")]
+	private static partial IntPtr WindowFromPoint (POINT point);
+
+	[LibraryImport ("user32.dll")]
+	private static partial IntPtr GetCapture ();
+
+	[LibraryImport ("user32.dll")]
+	[return: MarshalAs (UnmanagedType.Bool)]
+	private static partial bool ReleaseCapture ();
+
+	[LibraryImport ("user32.dll", EntryPoint = "SendMessageW")]
+	private static partial IntPtr SendMessage (IntPtr hWnd, uint msg, IntPtr wParam, IntPtr lParam);
+
+	[LibraryImport ("user32.dll", EntryPoint = "PostMessageW")]
+	[return: MarshalAs (UnmanagedType.Bool)]
+	private static partial bool PostMessage (IntPtr hWnd, uint msg, IntPtr wParam, IntPtr lParam);
+
+	[LibraryImport ("user32.dll", EntryPoint = "SetWindowsHookExW", SetLastError = true)]
+	private static partial IntPtr SetWindowsHookEx (int idHook, LowLevelMouseProc lpfn, IntPtr hMod, uint dwThreadId);
+
+	[LibraryImport ("user32.dll")]
+	[return: MarshalAs (UnmanagedType.Bool)]
+	private static partial bool UnhookWindowsHookEx (IntPtr hhk);
+
+	[LibraryImport ("user32.dll")]
+	private static partial IntPtr CallNextHookEx (IntPtr hhk, int nCode, IntPtr wParam, IntPtr lParam);
+
+	[LibraryImport ("kernel32.dll", EntryPoint = "GetModuleHandleW")]
+	private static partial IntPtr GetModuleHandle (IntPtr lpModuleName);
+
+	private const int WH_MOUSE_LL = 14;
+	private delegate IntPtr LowLevelMouseProc (int nCode, IntPtr wParam, IntPtr lParam);
+
+	[StructLayout (LayoutKind.Sequential)]
+	private struct POINT
+	{
+		public int X, Y;
+	}
+
+	[StructLayout (LayoutKind.Sequential)]
+	private struct MSLLHOOKSTRUCT
+	{
+		public POINT pt;
+		public uint mouseData;
+		public uint flags;
+		public uint time;
+		public UIntPtr dwExtraInfo;
+	}
+
+	private static IntPtr MakeLParam (int x, int y) => (IntPtr) ((y << 16) | (x & 0xFFFF));
+
 	// GetWindow command: the window's owner.
 	private const uint GW_OWNER = 4;
+
+	// Dismissing an open GTK menu/popover when the native title bar is clicked.
+	// An open menu holds the pointer grab and GDK never sees clicks on the native
+	// (Win32) title bar, so the menu would otherwise stay open with the title bar
+	// unresponsive. While a menu is open we run a low-level mouse hook (installed
+	// only for that period - no always-on overhead). It uses GetCapture() to find
+	// whichever menu currently holds the grab (this stays correct as the user
+	// navigates the menu bar, unlike tracking one specific popup), and on a click
+	// on the main window's native frame it dismisses the menu and forwards the
+	// title-bar command.
+	private static IntPtr _menuMainWindow;
+	private static IntPtr _menuMouseHook;
+	private static LowLevelMouseProc? _menuMouseProc;
+
+	// Called when the main window loses the capture to a popup (a menu opening).
+	private static void OnMenuOpened (IntPtr mainWindow)
+	{
+		_menuMainWindow = mainWindow;
+		if (_menuMouseHook != IntPtr.Zero) return;
+		_menuMouseProc ??= MenuMouseHookProc;
+		_menuMouseHook = SetWindowsHookEx (WH_MOUSE_LL, _menuMouseProc, GetModuleHandle (IntPtr.Zero), 0);
+	}
+
+	private static void RemoveMenuMouseHook ()
+	{
+		if (_menuMouseHook == IntPtr.Zero) return;
+		UnhookWindowsHookEx (_menuMouseHook);
+		_menuMouseHook = IntPtr.Zero;
+	}
+
+	private static IntPtr MenuMouseHookProc (int nCode, IntPtr wParam, IntPtr lParam)
+	{
+		if (nCode >= 0) {
+			IntPtr menu = GetCapture (); // whichever menu/popover currently holds the grab
+
+			if (menu == IntPtr.Zero) {
+				// No menu open any more; the hook has done its job until next time.
+				RemoveMenuMouseHook ();
+			} else if (wParam == (IntPtr) 0x0201 /*WM_LBUTTONDOWN*/) {
+				MSLLHOOKSTRUCT data = Marshal.PtrToStructure<MSLLHOOKSTRUCT> (lParam);
+				POINT pt = data.pt;
+
+				bool insideMenu = GetWindowRect (menu, out RECT mr)
+					&& pt.X >= mr.Left && pt.X < mr.Right && pt.Y >= mr.Top && pt.Y < mr.Bottom;
+
+				if (!insideMenu) {
+					IntPtr target = WindowFromPoint (pt);
+					IntPtr root = target != IntPtr.Zero ? GetAncestor (target, GA_ROOT) : IntPtr.Zero;
+					if (root == _menuMainWindow && root != IntPtr.Zero) {
+						long hit = SendMessage (root, 0x0084 /*WM_NCHITTEST*/, IntPtr.Zero, MakeLParam (pt.X, pt.Y)).ToInt64 ();
+
+						// Only act on the native title-bar (non-client) area; for clicks
+						// in the client area (the canvas) let GTK dismiss the menu itself.
+						// We don't trust the exact hit value to pick a command (the
+						// hooked coordinates can hit-test to the wrong button), so we
+						// only use it to tell title-bar from canvas, then release the
+						// grab and let the *real* click through - Windows then hit-tests
+						// it natively and performs the correct min/max/restore/close.
+						if (hit != 1 /*HTCLIENT*/ && hit != 0 /*HTNOWHERE*/) {
+							ReleaseCapture ();
+							PostMessage (menu, 0x0100 /*WM_KEYDOWN*/, (IntPtr) 0x1B /*VK_ESCAPE*/, IntPtr.Zero);
+							PostMessage (menu, 0x0101 /*WM_KEYUP*/, (IntPtr) 0x1B, IntPtr.Zero);
+							// Don't swallow: let the click reach the title bar.
+						}
+					}
+				}
+			}
+		}
+
+		return CallNextHookEx (_menuMouseHook, nCode, wParam, lParam);
+	}
 
 	[LibraryImport ("user32.dll")]
 	[return: MarshalAs (UnmanagedType.Bool)]
@@ -295,6 +417,14 @@ internal static partial class WindowsIntegration
 	{
 		if (!_originalWndProc.TryGetValue (hWnd, out IntPtr original))
 			return IntPtr.Zero;
+
+		// When a GTK menu/popover takes the pointer grab it shows up here as the
+		// main window losing the capture to another window (the popup). Start the
+		// menu mouse hook so a click on the native title bar dismisses the menu and
+		// acts (see OnMenuOpened / MenuMouseHookProc); GDK otherwise can't see
+		// native-frame clicks and the menu stays open with the title bar dead.
+		if (msg == 0x0215 /*WM_CAPTURECHANGED*/ && lParam != IntPtr.Zero && lParam != hWnd)
+			OnMenuOpened (hWnd);
 
 		switch (msg) {
 		case WM_SYSCOMMAND: {
