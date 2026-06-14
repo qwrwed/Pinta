@@ -319,48 +319,48 @@ internal static partial class WindowsIntegration
 			return IntPtr.Zero;
 
 		switch (msg) {
-		case WM_WINDOWPOSCHANGING:
-			// WINDOWPOS flags live at offset 32 on x64 (see SubclassWndProc).
-			if (lParam != IntPtr.Zero) {
-				uint flags = (uint) Marshal.ReadInt32 (lParam, 32);
+			case WM_WINDOWPOSCHANGING:
+				// WINDOWPOS flags live at offset 32 on x64 (see SubclassWndProc).
+				if (lParam != IntPtr.Zero) {
+					uint flags = (uint) Marshal.ReadInt32 (lParam, 32);
 
-				// On show, disable the owner so its native title bar is inert while
-				// the dialog is open (dead buttons + ding + flash, like a real modal).
-				if ((flags & SWP_SHOWWINDOW) != 0 && !_dialogDisabledOwner.ContainsKey (hWnd)) {
-					IntPtr owner = GetWindow (hWnd, GW_OWNER);
-					if (owner != IntPtr.Zero) {
-						_dialogDisabledOwner[hWnd] = owner;
-						DisableOwner (owner);
+					// On show, disable the owner so its native title bar is inert while
+					// the dialog is open (dead buttons + ding + flash, like a real modal).
+					if ((flags & SWP_SHOWWINDOW) != 0 && !_dialogDisabledOwner.ContainsKey (hWnd)) {
+						IntPtr owner = GetWindow (hWnd, GW_OWNER);
+						if (owner != IntPtr.Zero) {
+							_dialogDisabledOwner[hWnd] = owner;
+							DisableOwner (owner);
+						}
+					}
+
+					if ((flags & SWP_HIDEWINDOW) != 0) {
+						// Re-enable the owner first (a disabled window can't be brought
+						// to the foreground), then apply the z-order fix.
+						if (_dialogDisabledOwner.TryGetValue (hWnd, out IntPtr disabledOwner)) {
+							_dialogDisabledOwner.Remove (hWnd);
+							EnableOwner (disabledOwner);
+						}
+
+						IntPtr owner = GetWindow (hWnd, GW_OWNER);
+						if (owner != IntPtr.Zero) {
+							BringWindowToTop (owner);
+							SetForegroundWindow (owner);
+						}
 					}
 				}
-
-				if ((flags & SWP_HIDEWINDOW) != 0) {
-					// Re-enable the owner first (a disabled window can't be brought
-					// to the foreground), then apply the z-order fix.
-					if (_dialogDisabledOwner.TryGetValue (hWnd, out IntPtr disabledOwner)) {
-						_dialogDisabledOwner.Remove (hWnd);
-						EnableOwner (disabledOwner);
-					}
-
-					IntPtr owner = GetWindow (hWnd, GW_OWNER);
-					if (owner != IntPtr.Zero) {
-						BringWindowToTop (owner);
-						SetForegroundWindow (owner);
-					}
+				break;
+			case WM_NCDESTROY:
+				// Safety net: re-enable the owner if the dialog is destroyed without a
+				// hide, so a missed enable can never leave the main window frozen.
+				if (_dialogDisabledOwner.TryGetValue (hWnd, out IntPtr ownerOnDestroy)) {
+					_dialogDisabledOwner.Remove (hWnd);
+					EnableOwner (ownerOnDestroy);
 				}
-			}
-			break;
-		case WM_NCDESTROY:
-			// Safety net: re-enable the owner if the dialog is destroyed without a
-			// hide, so a missed enable can never leave the main window frozen.
-			if (_dialogDisabledOwner.TryGetValue (hWnd, out IntPtr ownerOnDestroy)) {
-				_dialogDisabledOwner.Remove (hWnd);
-				EnableOwner (ownerOnDestroy);
-			}
-			// Restore the original WndProc and drop our state before destruction.
-			SetWindowLongPtr (hWnd, GWLP_WNDPROC, original);
-			_modalDialogWndProc.Remove (hWnd);
-			return CallWindowProc (original, hWnd, msg, wParam, lParam);
+				// Restore the original WndProc and drop our state before destruction.
+				SetWindowLongPtr (hWnd, GWLP_WNDPROC, original);
+				_modalDialogWndProc.Remove (hWnd);
+				return CallWindowProc (original, hWnd, msg, wParam, lParam);
 		}
 
 		return CallWindowProc (original, hWnd, msg, wParam, lParam);
@@ -427,51 +427,51 @@ internal static partial class WindowsIntegration
 			OnMenuOpened (hWnd);
 
 		switch (msg) {
-		case WM_SYSCOMMAND: {
-			uint cmd = (uint) (wParam.ToInt64 () & 0xFFF0);
-			if (cmd == SC_MAXIMIZE)
-				_wantMaximized[hWnd] = true;
-			else if (cmd == SC_RESTORE || cmd == SC_MINIMIZE)
-				_wantMaximized[hWnd] = false;
-			break;
-		}
-		case WM_WINDOWPOSCHANGING: {
-			// WINDOWPOS layout (x64): hwnd(0) hwndInsertAfter(8) x(16) y(20)
-			// cx(24) cy(28) flags(32).
-			bool want = _wantMaximized.TryGetValue (hWnd, out bool w) && w;
-			if (lParam != IntPtr.Zero && IsZoomed (hWnd)) {
-				int cx = Marshal.ReadInt32 (lParam, 24);
-				int cy = Marshal.ReadInt32 (lParam, 28);
-				uint flags = (uint) Marshal.ReadInt32 (lParam, 32);
-
-				if (GetWindowRect (hWnd, out RECT r)) {
-					int curW = r.Right - r.Left;
-					int curH = r.Bottom - r.Top;
-
-					// A grow while zoomed means a real (re)maximize - covers Aero
-					// snap-to-top, which doesn't send WM_SYSCOMMAND SC_MAXIMIZE.
-					if (cx > curW || cy > curH)
-						_wantMaximized[hWnd] = want = true;
-
-					// While we should stay maximized, block GTK's spurious shrink
-					// below the current (monitor) size by telling Windows to keep
-					// the existing size.
-					if (want && (flags & SWP_NOSIZE) == 0 && (cx < curW || cy < curH)) {
-						flags |= SWP_NOSIZE;
-						Marshal.WriteInt32 (lParam, 32, (int) flags);
-					}
+			case WM_SYSCOMMAND: {
+					uint cmd = (uint) (wParam.ToInt64 () & 0xFFF0);
+					if (cmd == SC_MAXIMIZE)
+						_wantMaximized[hWnd] = true;
+					else if (cmd == SC_RESTORE || cmd == SC_MINIMIZE)
+						_wantMaximized[hWnd] = false;
+					break;
 				}
-			}
-			break;
-		}
-		case WM_NCDESTROY: {
-			// Restore the original WndProc and drop our state before the window
-			// is destroyed.
-			SetWindowLongPtr (hWnd, GWLP_WNDPROC, original);
-			_originalWndProc.Remove (hWnd);
-			_wantMaximized.Remove (hWnd);
-			return CallWindowProc (original, hWnd, msg, wParam, lParam);
-		}
+			case WM_WINDOWPOSCHANGING: {
+					// WINDOWPOS layout (x64): hwnd(0) hwndInsertAfter(8) x(16) y(20)
+					// cx(24) cy(28) flags(32).
+					bool want = _wantMaximized.TryGetValue (hWnd, out bool w) && w;
+					if (lParam != IntPtr.Zero && IsZoomed (hWnd)) {
+						int cx = Marshal.ReadInt32 (lParam, 24);
+						int cy = Marshal.ReadInt32 (lParam, 28);
+						uint flags = (uint) Marshal.ReadInt32 (lParam, 32);
+
+						if (GetWindowRect (hWnd, out RECT r)) {
+							int curW = r.Right - r.Left;
+							int curH = r.Bottom - r.Top;
+
+							// A grow while zoomed means a real (re)maximize - covers Aero
+							// snap-to-top, which doesn't send WM_SYSCOMMAND SC_MAXIMIZE.
+							if (cx > curW || cy > curH)
+								_wantMaximized[hWnd] = want = true;
+
+							// While we should stay maximized, block GTK's spurious shrink
+							// below the current (monitor) size by telling Windows to keep
+							// the existing size.
+							if (want && (flags & SWP_NOSIZE) == 0 && (cx < curW || cy < curH)) {
+								flags |= SWP_NOSIZE;
+								Marshal.WriteInt32 (lParam, 32, (int) flags);
+							}
+						}
+					}
+					break;
+				}
+			case WM_NCDESTROY: {
+					// Restore the original WndProc and drop our state before the window
+					// is destroyed.
+					SetWindowLongPtr (hWnd, GWLP_WNDPROC, original);
+					_originalWndProc.Remove (hWnd);
+					_wantMaximized.Remove (hWnd);
+					return CallWindowProc (original, hWnd, msg, wParam, lParam);
+				}
 		}
 
 		return CallWindowProc (original, hWnd, msg, wParam, lParam);
