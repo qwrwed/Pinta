@@ -630,7 +630,52 @@ internal sealed class MainWindow
 		if (args.Value.GetBoxed (Gdk.FileList.GetGType ()) is not Gdk.FileList file_list)
 			return false;
 
-		foreach (Gio.File file in file_list.GetFilesHelper ()) {
+		var files = file_list.GetFilesHelper ().ToArray ();
+		if (files.Length == 0)
+			return false;
+
+		// Handle asynchronously so we can prompt the user for what to do with
+		// the dropped file(s) without blocking the drop callback.
+		_ = HandleDroppedFilesAsync (files);
+
+		return true;
+	}
+
+	private async System.Threading.Tasks.Task HandleDroppedFilesAsync (Gio.File[] files)
+	{
+		// If an image is already open, offer the same choice as Paint.NET:
+		// open the dropped image(s) as new document(s), or add them as layers.
+		bool add_as_layers = false;
+
+		if (PintaCore.Workspace.HasOpenDocuments) {
+			const int response_open = 1;
+			const int response_add_layer = 2;
+			const int response_cancel = 3;
+
+			int response = await GtkExtensions.ShowMessageDialogAsync (
+				window_shell.Window,
+				Translations.GetString ("Drag and Drop"),
+				Translations.GetString ("What would you like to do with the file?"),
+				string.Empty,
+				[
+					(Translations.GetString ("Open"), response_open, GtkExtensions.DialogButtonStyle.Normal),
+					(Translations.GetString ("Add Layer"), response_add_layer, GtkExtensions.DialogButtonStyle.Normal),
+					(Translations.GetString ("_Cancel"), response_cancel, GtkExtensions.DialogButtonStyle.Normal),
+				],
+				defaultResponse: response_open);
+
+			if (response != response_open && response != response_add_layer)
+				return; // Cancelled or dialog closed.
+
+			add_as_layers = response == response_add_layer;
+		}
+
+		foreach (Gio.File file in files) {
+			if (add_as_layers) {
+				PintaCore.Actions.Layers.ImportFileAsLayer (PintaCore.Workspace.ActiveDocument, file, atTop: true);
+				continue;
+			}
+
 			PintaCore.Workspace.OpenFile (file);
 
 			if (file.GetUriScheme () is string scheme &&
@@ -640,8 +685,6 @@ internal sealed class MainWindow
 				PintaCore.Workspace.ActiveDocument.ClearFileReference ();
 			}
 		}
-
-		return true;
 	}
 
 	private void ZoomToSelection_Activated (object sender, EventArgs e)

@@ -270,27 +270,75 @@ public sealed class LayerActions
 		if (directory is not null)
 			recent_files.LastDialogDirectory = directory;
 
-		// Open the image and add it to the layers
-		UserLayer layer = doc.Layers.AddNewLayer (choice.GetDisplayName ());
+		// Place the imported layer directly above the currently selected layer.
+		ImportFileAsLayer (doc, choice, atTop: false);
+	}
 
-		using (Gio.FileInputStream fs = choice.Read (null)) {
-			try {
-				using GdkPixbuf.Pixbuf bg = GdkPixbuf.Pixbuf.NewFromStream (fs, cancellable: null)!; // NRT: only nullable when an error is thrown
-				using Cairo.Context context = new (layer.Surface);
-				context.DrawPixbuf (bg, PointD.Zero);
-			} finally {
-				fs.Close (null);
+	/// <summary>
+	/// Imports an image file into the given document, adding each of the file's
+	/// layers as a separate layer (preserving their stacking order, name,
+	/// opacity, visibility and blend mode). When <paramref name="atTop"/> is true
+	/// the imported layers are placed above all existing layers (used for
+	/// drag-and-drop); otherwise they are placed directly above the currently
+	/// selected layer (used by the Layers > Import from File menu).
+	/// </summary>
+	public void ImportFileAsLayer (Document doc, Gio.File file, bool atTop)
+	{
+		// Load through Pinta's image format importers (not GdkPixbuf directly) so
+		// that multi-layer formats such as OpenRaster (.ora) and Paint.NET (.pdn)
+		// import correctly instead of producing a blank layer.
+		IImageImporter? importer = image_formats.GetImporterByFile (file.GetDisplayName ());
+		if (importer is null)
+			return;
+
+		Document imported = importer.Import (file);
+
+		// --- Import succeeded; now modify the target document.
+
+		CompoundHistoryItem hist = new (
+			Resources.Icons.LayerImport,
+			Translations.GetString ("Import From File"));
+
+		// Grow the canvas if the imported image is larger, so its layers aren't
+		// clipped (the imported content is anchored to the top-left). This must
+		// happen before the new layers are created so they get the new size.
+		Size newSize = new (
+			Width: Math.Max (doc.ImageSize.Width, imported.ImageSize.Width),
+			Height: Math.Max (doc.ImageSize.Height, imported.ImageSize.Height));
+
+		if (newSize != doc.ImageSize)
+			doc.ResizeCanvas (newSize, Anchor.NW, hist);
+
+		int insertIndex = atTop
+			? doc.Layers.Count ()
+			: doc.Layers.CurrentUserLayerIndex + 1;
+
+		UserLayer? topLayer = null;
+
+		// UserLayers are ordered bottom-to-top; inserting at increasing indices
+		// preserves the imported file's stacking order in the target document.
+		foreach (UserLayer source in imported.Layers.UserLayers) {
+			UserLayer layer = doc.Layers.CreateLayer (source.Name);
+			layer.Hidden = source.Hidden;
+			layer.Opacity = source.Opacity;
+			layer.BlendMode = source.BlendMode;
+
+			using (Cairo.Context context = new (layer.Surface)) {
+				context.SetSourceSurface (source.Surface, 0, 0);
+				context.Paint ();
 			}
+
+			doc.Layers.Insert (layer, insertIndex);
+			hist.Push (new AddLayerHistoryItem (string.Empty, string.Empty, insertIndex));
+
+			topLayer = layer;
+			insertIndex++;
 		}
 
-		AddLayerHistoryItem hist = new (
-			Resources.Icons.LayerImport,
-			Translations.GetString ("Import From File"),
-			doc.Layers.IndexOf (layer));
+		if (topLayer is null)
+			return; // The file contained no layers.
 
-		// --- Changes to document go after everything else is completed successfully
-
-		doc.Layers.SetCurrentUserLayer (layer);
+		doc.Layers.SetCurrentUserLayer (topLayer);
 		doc.History.PushNewItem (hist);
 		doc.Workspace.Invalidate ();
 	}
