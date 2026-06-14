@@ -166,10 +166,13 @@ internal sealed class SaveDocumentImplmentationAction : IActionHandler
 				// The typed extension maps to a format Pinta can only open, not write
 				// (e.g. .pdn). Don't silently write a different format under this extension;
 				// re-prompt so the user can choose a writable name/type.
-				await chrome.ShowMessageDialog (
+				await GtkExtensions.ShowMessageDialogAsync (
 					chrome.MainWindow,
+					Translations.GetString ("Unsupported Format"),
 					UnsupportedFormatHeading (displayName),
-					Translations.GetString ("Pinta does not support saving images in this file format."));
+					Translations.GetString ("Pinta does not support saving images in this file format."),
+					[(Translations.GetString ("_OK"), (int) Gtk.ResponseType.Ok, GtkExtensions.DialogButtonStyle.Normal)],
+					defaultResponse: (int) Gtk.ResponseType.Ok);
 				continue;
 			}
 
@@ -229,8 +232,8 @@ internal sealed class SaveDocumentImplmentationAction : IActionHandler
 
 			int response = await GtkExtensions.ShowMessageDialogAsync (
 				parent,
-				heading, // the heading ("Unsupported format: .pdn") is already short - use it as the title
-				null,
+				Translations.GetString ("Unsupported Format"),
+				heading,
 				body,
 				[
 					(Translations.GetString ("_Cancel"), cancel, GtkExtensions.DialogButtonStyle.Normal),
