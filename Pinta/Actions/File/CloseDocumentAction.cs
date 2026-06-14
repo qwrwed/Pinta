@@ -25,6 +25,7 @@
 // THE SOFTWARE.
 
 using System;
+using System.Threading.Tasks;
 using Pinta.Core;
 
 namespace Pinta.Actions;
@@ -59,18 +60,33 @@ internal sealed class CloseDocumentAction : IActionHandler
 
 	private async void Activated (object sender, EventArgs e)
 	{
+		await TryCloseActiveDocument (chrome, workspace, tools);
+	}
+
+	/// <summary>
+	/// Prompts to save the active document if it is dirty, then closes it.
+	/// Returns <c>true</c> if the document was closed (saved or discarded, or
+	/// it was not dirty), or <c>false</c> if the user cancelled.
+	/// </summary>
+	internal static async Task<bool> TryCloseActiveDocument (
+		ChromeManager chrome,
+		WorkspaceManager workspace,
+		ToolManager tools)
+	{
 		// Commit any pending changes
 		tools.Commit ();
 
+		Document document = workspace.ActiveDocument;
+
 		// If it's not dirty, just close it
-		if (!workspace.ActiveDocument.IsDirty) {
+		if (!document.IsDirty) {
 			workspace.CloseActiveDocument ();
-			return;
+			return true;
 		}
 
 		string heading = Translations.GetString (
 			"Save changes to image \"{0}\" before closing?",
-			workspace.ActiveDocument.DisplayName);
+			document.DisplayName);
 
 		string body = Translations.GetString ("If you don't save, all changes will be permanently lost.");
 
@@ -92,16 +108,22 @@ internal sealed class CloseDocumentAction : IActionHandler
 
 		if (response == save_response) {
 
-			bool saved = await workspace.ActiveDocument.Save (false);
+			bool saved = await document.Save (false);
 
 			// If saved is false, then the user
 			// must have cancelled the Save dialog
-			if (saved)
+			if (saved) {
 				workspace.CloseActiveDocument ();
+				return true;
+			}
+
+			return false;
 
 		} else if (response == discard_response) {
 			workspace.CloseActiveDocument ();
+			return true;
 		}
 
+		return false;
 	}
 }

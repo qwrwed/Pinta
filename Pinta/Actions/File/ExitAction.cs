@@ -34,14 +34,17 @@ internal sealed class ExitProgramAction : IActionHandler
 	private readonly ActionManager actions;
 	private readonly ChromeManager chrome;
 	private readonly WorkspaceManager workspace;
+	private readonly ToolManager tools;
 	internal ExitProgramAction (
 		ActionManager actions,
 		ChromeManager chrome,
-		WorkspaceManager workspace)
+		WorkspaceManager workspace,
+		ToolManager tools)
 	{
 		this.actions = actions;
 		this.chrome = chrome;
 		this.workspace = workspace;
+		this.tools = tools;
 	}
 
 	void IActionHandler.Initialize ()
@@ -54,16 +57,14 @@ internal sealed class ExitProgramAction : IActionHandler
 		actions.App.Exit.Activated -= Activated;
 	}
 
-	private void Activated (object sender, EventArgs e)
+	private async void Activated (object sender, EventArgs e)
 	{
+		// Prompt to save each open document in turn. If the user cancels
+		// on any of them, abort quitting and leave the window open.
 		while (workspace.HasOpenDocuments) {
-			int count = workspace.OpenDocuments.Count;
+			bool closed = await CloseDocumentAction.TryCloseActiveDocument (chrome, workspace, tools);
 
-			actions.File.Close.Activate ();
-
-			// If we still have the same number of open documents,
-			// the user cancelled on a Save prompt.
-			if (count == workspace.OpenDocuments.Count)
+			if (!closed)
 				return;
 		}
 

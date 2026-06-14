@@ -61,7 +61,7 @@ public sealed class ActionHandlers
 			new ModifyCompressionAction (actions.File),
 			//new PrintDocumentAction ();
 			new CloseDocumentAction (actions, chrome, workspace, tools),
-			new ExitProgramAction (actions, chrome, workspace),
+			new ExitProgramAction (actions, chrome, workspace, tools),
 
 			// Edit
 			new OffsetSelectionAction (actions.Edit, chrome, workspace, tools),
