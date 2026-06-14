@@ -163,7 +163,7 @@ public sealed class EditActions
 			Translations.GetString ("Deselect All"),
 			null,
 			Resources.Icons.EditSelectionNone,
-			shortcuts: ["<Primary><Shift>A", "<Ctrl>D"]);
+			shortcuts: ["<Primary><Shift>A", "<Ctrl>D", "Escape"]);
 
 		LoadPalette = new Command (
 			"loadpalette",
