@@ -21,6 +21,11 @@ public sealed class TextTool : BaseTool
 	private PointD start_mouse_xy;
 	private PointI start_click_point;
 	private bool tracking;
+
+	// Caret blinking while editing.
+	private bool caret_visible = true;
+	private uint caret_blink_timer_id = 0;
+	private const uint CaretBlinkIntervalMs = 530;
 	private readonly Gdk.Cursor cursor_move = GdkExtensions.CursorFromName (Pinta.Resources.StandardCursors.Move);
 	private readonly Gdk.Cursor cursor_invalid = GdkExtensions.CursorFromName (Pinta.Resources.StandardCursors.NotAllowed);
 
@@ -784,8 +789,11 @@ public sealed class TextTool : BaseTool
 				}
 			}
 
-			if (keyHandled)
+			if (keyHandled) {
+				// Keep the caret solid right after typing / moving the cursor, then resume blinking.
+				ResetCaretBlink ();
 				RedrawText (true, true);
+			}
 		}
 
 		return keyHandled;
@@ -863,6 +871,41 @@ public sealed class TextTool : BaseTool
 
 	#region Start/Stop Editing
 
+	// Makes the caret solid and (re)starts the blink timer. Called when editing begins and on each
+	// edit/caret movement so the caret is always visible right after the user does something.
+	private void ResetCaretBlink ()
+	{
+		caret_visible = true;
+
+		if (caret_blink_timer_id != 0)
+			GLib.Source.Remove (caret_blink_timer_id);
+
+		caret_blink_timer_id = GLib.Functions.TimeoutAdd (GLib.Constants.PRIORITY_DEFAULT, CaretBlinkIntervalMs, OnCaretBlinkTick);
+	}
+
+	private void StopCaretBlink ()
+	{
+		if (caret_blink_timer_id != 0) {
+			GLib.Source.Remove (caret_blink_timer_id);
+			caret_blink_timer_id = 0;
+		}
+
+		caret_visible = true;
+	}
+
+	private bool OnCaretBlinkTick ()
+	{
+		if (!is_editing || !workspace.HasOpenDocuments) {
+			caret_blink_timer_id = 0;
+			caret_visible = true;
+			return false; // Stop the timer.
+		}
+
+		caret_visible = !caret_visible;
+		RedrawText (true, true);
+		return true; // Keep blinking.
+	}
+
 	private void StartEditing ()
 	{
 		// Ensure we have an event handler added to finalize re-editable text for the document if the layer is cloned.
@@ -870,6 +913,7 @@ public sealed class TextTool : BaseTool
 		workspace.ActiveDocument.LayerCloned += FinalizeText;
 
 		is_editing = true;
+		ResetCaretBlink ();
 
 		im_context.SetClientWidget (workspace.ActiveWorkspace.Canvas);
 
@@ -903,6 +947,7 @@ public sealed class TextTool : BaseTool
 			return;
 
 		is_editing = false;
+		StopCaretBlink ();
 
 		//Make sure that neither undo surface is null, the user is editing, and there are uncommitted changes.
 		if (text_undo_surface != null && user_undo_surface != null && CurrentTextEngine.State == TextMode.Uncommitted) {
@@ -1051,12 +1096,17 @@ public sealed class TextTool : BaseTool
 		if (showCursor) {
 
 			RectangleI loc = CurrentTextLayout.GetCursorLocation ();
-			Color color = CurrentTextEngine.PrimaryColor;
 
-			g.DrawLine (
-				new PointD (loc.X, loc.Y),
-				new PointD (loc.X, loc.Y + loc.Height),
-				color, 1);
+			// Only draw the caret on the "on" half of the blink cycle. The bounds are still
+			// recorded so the region is invalidated when the caret toggles back off.
+			if (caret_visible) {
+				Color color = CurrentTextEngine.PrimaryColor;
+
+				g.DrawLine (
+					new PointD (loc.X, loc.Y),
+					new PointD (loc.X, loc.Y + loc.Height),
+					color, 1);
+			}
 
 			cursorBounds = loc;
 			cursorBounds = cursorBounds.Inflated (2, 10);

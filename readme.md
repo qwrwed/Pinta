@@ -37,6 +37,7 @@ This fork adds the following on top of upstream Pinta:
 - **Tool order matching Paint.NET** - the toolbox is reordered to match the Paint.NET layout. Addresses upstream issues [#1219](https://github.com/PintaProject/Pinta/issues/1219) and [#2127](https://github.com/PintaProject/Pinta/issues/2127).
 - **Cursor/stroke offset fix** - corrects the cursor and stroke position when the window is smaller than the canvas. Addresses upstream issue [#2165](https://github.com/PintaProject/Pinta/issues/2165).
 - **Escape deselects** - pressing Escape clears the current selection (Paint.NET behaviour), in addition to the existing Ctrl+Shift+A / Ctrl+D shortcuts. Addresses upstream issues [#1849](https://github.com/PintaProject/Pinta/issues/1849), [#1732](https://github.com/PintaProject/Pinta/issues/1732) and [#2133](https://github.com/PintaProject/Pinta/issues/2133).
+- **Text tool improvements** - the text caret now blinks while editing.
 - **Windows dev install + release tooling** - `install-windows-dev.ps1` builds a self-contained app and installs over a system Pinta (preserving user-added files like addin DLLs), and CI publishes a Windows installer to GitHub Releases on tag.
 
 ## Icons are from:
