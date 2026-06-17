@@ -19,6 +19,9 @@ env:
 jobs:
   build-ubuntu:
     runs-on: ubuntu-24.04
+    permissions:
+      # Allow the job to create/upload GitHub Releases on tag pushes.
+      contents: write
 
     # Test building with .NET 8 and .NET 9
     strategy:
@@ -79,6 +82,20 @@ jobs:
         name: Pinta-linux-dotnet-${{matrix.dotnet_version}}.zip
         path: ${{env.BUILD_DIR}}/pinta-${{env.PINTA_VERSION}}.zip
         if-no-files-found: error
+
+    # On a tag push, publish the self-contained linux-x64 zip to GitHub
+    # Releases. Only the .NET 8 matrix leg publishes, since both legs produce
+    # an identically-named zip and would otherwise collide.
+    - name: Rename release zip
+      if: startsWith( github.ref, 'refs/tags/' ) && matrix.dotnet_version == '8.0.x'
+      run: cp ${{env.BUILD_DIR}}/pinta-${{env.PINTA_VERSION}}.zip ${{env.BUILD_DIR}}/Pinta-linux-x64.zip
+
+    - name: Publish to GitHub Release
+      if: startsWith( github.ref, 'refs/tags/' ) && matrix.dotnet_version == '8.0.x'
+      uses: softprops/action-gh-release@v2
+      with:
+        files: ${{env.BUILD_DIR}}/Pinta-linux-x64.zip
+        fail_on_unmatched_files: true
 
   build-macos:
     # Build for both intel and arm64
