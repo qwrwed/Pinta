@@ -21,13 +21,21 @@ public sealed class TextTool : BaseTool
 	private PointD start_mouse_xy;
 	private PointI start_click_point;
 	private bool tracking;
+	// Set when a left-click lands on the text while editing, so that a subsequent
+	// drag moves the text (a click without dragging just places the cursor).
+	private bool left_drag_candidate;
+	// How far (in canvas pixels) the mouse must move before a left-click becomes a move-drag.
+	private const double MoveDragThreshold = 2.0;
+	// Width (in canvas pixels) of the band at the edge of the text box where the move cursor
+	// is shown and a left-drag moves the text. Inside that band it behaves as a text cursor.
+	private const int MoveBorderBand = 6;
 
 	// Caret blinking while editing.
 	private bool caret_visible = true;
 	private uint caret_blink_timer_id = 0;
 	private const uint CaretBlinkIntervalMs = 530;
 	private readonly Gdk.Cursor cursor_move = GdkExtensions.CursorFromName (Pinta.Resources.StandardCursors.Move);
-	private readonly Gdk.Cursor cursor_invalid = GdkExtensions.CursorFromName (Pinta.Resources.StandardCursors.NotAllowed);
+	private readonly Gdk.Cursor cursor_default = GdkExtensions.CursorFromName (Pinta.Resources.StandardCursors.Default);
 
 	private PointI click_point;
 	private bool is_editing;
@@ -75,9 +83,6 @@ public sealed class TextTool : BaseTool
 	//While this is true, text will not be finalized upon Surface.Clone calls.
 	private bool ignore_clone_finalizations = false;
 
-	//Whether or not either (or both) of the Ctrl keys are pressed.
-	private bool ctrl_key = false;
-
 	//Store the most recent mouse position.
 	private PointI last_mouse_position = new (0, 0);
 
@@ -97,7 +102,7 @@ public sealed class TextTool : BaseTool
 		=> 9;
 
 	public override string StatusBarText
-		=> Translations.GetString ("Left click to place cursor, then type desired text. Text color is primary color.");
+		=> Translations.GetString ("Left click to place cursor, then type desired text. Drag the edge to move it, or click existing text to edit it. Text color is primary color.");
 
 	public override Gdk.Cursor DefaultCursor { get; }
 
@@ -475,7 +480,7 @@ public sealed class TextTool : BaseTool
 	protected override void OnCommit (Document? document)
 	{
 		im_context.FocusOut ();
-		StopEditing (false);
+		StopEditing ();
 	}
 
 	protected override void OnDeactivated (Document? document, BaseTool? newTool)
@@ -490,14 +495,13 @@ public sealed class TextTool : BaseTool
 		workspace.LayerRemoved -= HandleSelectedLayerChanged;
 		workspace.SelectedLayerChanged -= HandleSelectedLayerChanged;
 
-		StopEditing (false);
+		StopEditing ();
 	}
 	#endregion
 
 	#region Mouse Handlers
 	protected override void OnMouseDown (Document document, ToolMouseEventArgs e)
 	{
-		ctrl_key = e.IsControlPressed;
 		im_context.FocusIn (); // Grab focus so we can get keystrokes
 		selection = document.Selection.Clone ();
 
@@ -516,79 +520,76 @@ public sealed class TextTool : BaseTool
 		//Store the mouse position.
 		PointI pt = e.Point;
 
-		// If the user is [editing or holding down Ctrl] and clicked
-		//within the text, move the cursor to the click location
-		if ((is_editing || ctrl_key) && CurrentTextBounds.Contains (pt)) {
-			StartEditing ();
+		// If there is a current text box (being edited, or placed but not yet finalized) and the
+		// click landed within it, position the cursor (interior) or start a move drag (border).
+		if ((is_editing || CurrentTextEngine.State == TextMode.NotFinalized) && CurrentTextBounds.Contains (pt)) {
 
-			//Change the position of the cursor to where the mouse clicked.
+			if (IsOnTextBorder (pt)) {
+				// On the border (move cursor shown): arm a potential move drag without entering edit
+				// mode, so dragging just moves the text (no caret appears). The move only starts once
+				// the mouse passes a small threshold; a click without dragging does nothing.
+				start_mouse_xy = e.PointDouble;
+				start_click_point = CurrentTextEngine.Origin;
+				left_drag_candidate = true;
+				return;
+			}
+
+			// Inside the text (I-beam shown): enter edit mode and position the cursor at the click.
+			StartEditing ();
 			TextPosition p = CurrentTextLayout.PointToTextPosition (pt);
 			CurrentTextEngine.SetCursorPosition (p, true);
-
-			//Redraw the text with the new cursor position.
 			RedrawText (true, true);
 
 			return;
 		}
 
-		// We're already editing and the user clicked outside the text,
-		// commit the user's work, and start a new edit
-		switch (CurrentTextEngine.State) {
-			// We were editing, save and stop
-			case TextMode.Uncommitted:
-				StopEditing (true);
-				break;
-
-			// We were editing, but nothing had been
-			// keyed. Stop editing.
-			case TextMode.Unchanged:
-				StopEditing (false);
-				break;
+		// We were editing and clicked outside the current text: finish editing but keep the text
+		// re-editable (do not finalize). A new text is not started on this same click - click again
+		// on empty canvas to start one. This makes "click away" consistent with pressing Escape.
+		if (is_editing) {
+			StopEditing ();
+			return;
 		}
 
-		if (ctrl_key) {
-			//Go through every UserLayer.
-			foreach (UserLayer ul in document.Layers.UserLayers) {
-				//Check each UserLayer's editable text boundaries to see if they contain the mouse position.
-				if (!ul.TextBounds.Contains (pt))
-					continue;
+		// If the click landed on existing re-editable (not-yet-finalized) text, resume editing it.
+		// Only such text has a non-empty TextBounds, so finalized/baked text won't match here.
+		// This works with a plain click; Ctrl is no longer required.
+		foreach (UserLayer ul in document.Layers.UserLayers) {
+			//Check each UserLayer's editable text boundaries to see if they contain the mouse position.
+			if (!ul.TextBounds.Contains (pt))
+				continue;
 
-				//The mouse clicked on editable text.
+			//Change the current UserLayer to the Layer that contains the text that was clicked on.
+			document.Layers.SetCurrentUserLayer (ul);
 
-				//Change the current UserLayer to the Layer that contains the text that was clicked on.
-				document.Layers.SetCurrentUserLayer (ul);
-
-				//The user is editing text now.
-				is_editing = true;
-
-				//Set the cursor in the editable text where the mouse was clicked.
-				TextPosition p = CurrentTextLayout.PointToTextPosition (pt);
-				CurrentTextEngine.SetCursorPosition (p, true);
-
-				//Redraw the editable text with the cursor.
-				RedrawText (true, true);
-
-				//Don't check any more UserLayers - stop at the first UserLayer that has editable text containing the mouse position.
-				return;
-			}
-		} else {
-			if (CurrentTextEngine.State == TextMode.NotFinalized) {
-				//The user is making a new text and the old text hasn't been finalized yet.
-				FinalizeText ();
-			}
-
-			if (is_editing)
-				return;
-
-			// Start editing at the cursor location
-			click_point = pt;
-			CurrentTextEngine.Clear ();
-			UpdateFont ();
-			click_point = click_point with { Y = click_point.Y - (CurrentTextLayout.FontHeight / 2) };
-			CurrentTextEngine.Origin = click_point;
+			//Resume editing that text.
 			StartEditing ();
+
+			//Set the cursor in the editable text where the mouse was clicked.
+			TextPosition p = CurrentTextLayout.PointToTextPosition (pt);
+			CurrentTextEngine.SetCursorPosition (p, true);
+
+			//Redraw the editable text with the cursor.
 			RedrawText (true, true);
+
+			//Don't check any more UserLayers - stop at the first UserLayer that has editable text containing the mouse position.
+			return;
 		}
+
+		// The click was on empty canvas, so start a new text there.
+		if (CurrentTextEngine.State == TextMode.NotFinalized) {
+			//Finalize the previous text before starting a new one.
+			FinalizeText ();
+		}
+
+		// Start editing at the cursor location
+		click_point = pt;
+		CurrentTextEngine.Clear ();
+		UpdateFont ();
+		click_point = click_point with { Y = click_point.Y - (CurrentTextLayout.FontHeight / 2) };
+		CurrentTextEngine.Origin = click_point;
+		StartEditing ();
+		RedrawText (true, true);
 	}
 
 	private void HandleRightClick (Document document, ToolMouseEventArgs e)
@@ -608,9 +609,15 @@ public sealed class TextTool : BaseTool
 
 	protected override void OnMouseMove (Document document, ToolMouseEventArgs e)
 	{
-		ctrl_key = e.IsControlPressed;
-
 		last_mouse_position = e.Point;
+
+		// A left-click inside the text becomes a move once the mouse is dragged far enough.
+		if (left_drag_candidate && !tracking) {
+			double dx = e.PointDouble.X - start_mouse_xy.X;
+			double dy = e.PointDouble.Y - start_mouse_xy.Y;
+			if ((dx * dx) + (dy * dy) >= MoveDragThreshold * MoveDragThreshold)
+				tracking = true;
+		}
 
 		// If we're dragging the text around, do that
 		if (tracking) {
@@ -621,7 +628,7 @@ public sealed class TextTool : BaseTool
 			click_point = new PointI ((int) (start_click_point.X + delta.X), (int) (start_click_point.Y + delta.Y));
 			CurrentTextEngine.Origin = click_point;
 
-			RedrawText (true, true);
+			RedrawText (is_editing, true);
 		} else {
 			UpdateMouseCursor (document);
 		}
@@ -629,6 +636,9 @@ public sealed class TextTool : BaseTool
 
 	protected override void OnMouseUp (Document document, ToolMouseEventArgs e)
 	{
+		// A left-click that never turned into a drag was just a cursor placement.
+		left_drag_candidate = false;
+
 		// If we were dragging the text around, finish that up
 		if (!tracking)
 			return;
@@ -638,9 +648,20 @@ public sealed class TextTool : BaseTool
 		click_point = new PointI ((int) (start_click_point.X + delta.X), (int) (start_click_point.Y + delta.Y));
 		CurrentTextEngine.Origin = click_point;
 
-		RedrawText (false, true);
+		RedrawText (is_editing, true);
 		tracking = false;
 		UpdateMouseCursor (document);
+	}
+
+	// True when the point is within the editable text box but close to its edge, i.e. on the
+	// border where dragging moves the text rather than positioning the text cursor.
+	private bool IsOnTextBorder (in PointI pt)
+	{
+		RectangleI bounds = CurrentTextBounds;
+		if (bounds.IsEmpty || !bounds.Contains (pt))
+			return false;
+
+		return !bounds.Inflated (-MoveBorderBand, -MoveBorderBand).Contains (pt);
 	}
 
 	private void UpdateMouseCursor (Document document)
@@ -650,16 +671,21 @@ public sealed class TextTool : BaseTool
 			return;
 		}
 
-		//Whether or not to show the normal text cursor.
-		Gdk.Cursor newCursor = cursor_invalid;
+		// There is a movable text box when editing, or when text is placed but not yet finalized.
+		bool hasMovableText = workspace.HasOpenDocuments && (is_editing || CurrentTextEngine.State == TextMode.NotFinalized);
 
-		if (ctrl_key && workspace.HasOpenDocuments) {
-			//Go through every UserLayer.
-			foreach (UserLayer ul in document.Layers.UserLayers) {
-				if (!ul.TextBounds.Contains (last_mouse_position)) continue; //Check each UserLayer's editable text boundaries to see if they contain the mouse position.
-				newCursor = DefaultCursor; //The mouse is over editable text.
-			}
+		Gdk.Cursor newCursor;
+
+		if (hasMovableText && IsOnTextBorder (last_mouse_position)) {
+			// On the border: dragging moves the text.
+			newCursor = cursor_move;
+		} else if (is_editing && !CurrentTextBounds.Contains (last_mouse_position)) {
+			// Editing, but outside the text box: clicking finishes editing rather than positioning a
+			// caret, so show the normal pointer instead of a misleading I-beam.
+			newCursor = cursor_default;
 		} else {
+			// Inside the text (position caret / edit), or on empty canvas while not editing
+			// (click starts a new text): the text cursor is appropriate.
 			newCursor = DefaultCursor;
 		}
 
@@ -685,9 +711,6 @@ public sealed class TextTool : BaseTool
 		// Ignore anything with Alt pressed
 		if (e.IsAltPressed)
 			return false;
-
-		ctrl_key = e.Key.IsControlKey ();
-		UpdateMouseCursor (document);
 
 		bool keyHandled = false;
 		if (is_editing) {
@@ -744,7 +767,7 @@ public sealed class TextTool : BaseTool
 						break;
 
 					case Gdk.Constants.KEY_Escape:
-						StopEditing (false);
+						StopEditing ();
 						return true;
 					case Gdk.Constants.KEY_Insert:
 						if (e.IsShiftPressed) {
@@ -797,17 +820,6 @@ public sealed class TextTool : BaseTool
 		}
 
 		return keyHandled;
-	}
-
-	protected override bool OnKeyUp (Document document, ToolKeyEventArgs e)
-	{
-		if (!e.Key.IsControlKey () && !e.IsControlPressed)
-			return false;
-
-		ctrl_key = false;
-
-		UpdateMouseCursor (document);
-		return false;
 	}
 
 	private bool TryHandleChar (Gdk.Event eventKey)
@@ -936,7 +948,10 @@ public sealed class TextTool : BaseTool
 		ignore_clone_finalizations = false;
 	}
 
-	private void StopEditing (bool finalize)
+	// Stops editing and commits the typed text as one undoable item, but leaves it re-editable
+	// (NotFinalized). Finishing editing never finalizes/rasterizes - that happens separately when a
+	// new text is started or the layer is otherwise cloned.
+	private void StopEditing ()
 	{
 		im_context.SetClientWidget (null);
 
@@ -979,10 +994,6 @@ public sealed class TextTool : BaseTool
 		}
 
 		RedrawText (false, true);
-
-		if (finalize) {
-			FinalizeText ();
-		}
 	}
 	#endregion
 
@@ -1115,7 +1126,7 @@ public sealed class TextTool : BaseTool
 		g.Restore ();
 
 
-		if (useTextLayer && (is_editing || ctrl_key) && !CurrentTextEngine.IsEmpty ()) {
+		if (useTextLayer && (is_editing || CurrentTextEngine.State == TextMode.NotFinalized)) {
 
 			//Draw the text edit rectangle.
 
@@ -1223,7 +1234,7 @@ public sealed class TextTool : BaseTool
 			return false;
 
 		// commit a history item to let the undo action undo text history item
-		StopEditing (false);
+		StopEditing ();
 
 		return false;
 	}
@@ -1235,7 +1246,7 @@ public sealed class TextTool : BaseTool
 			return false;
 
 		//Commit a new TextHistoryItem.
-		StopEditing (false);
+		StopEditing ();
 
 		return true;
 	}
